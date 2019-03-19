@@ -184,6 +184,8 @@ func (p *scyllaConnPicker) Put(conn *Conn) {
 	}
 	if c := p.conns[s.shard]; c != nil {
 		conn.Close()
+		Logger.Printf("scylla: %s discarding duplicate connection for shard %d connection total: %d missing: %d",
+			conn.Address(), s.shard, p.nrConns, p.nrShards-p.nrConns)
 		return
 	}
 	p.conns[s.shard] = conn
