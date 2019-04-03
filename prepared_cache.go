@@ -1,15 +1,16 @@
 package gocql
 
 import (
-	"github.com/gocql/gocql/internal/lru"
 	"sync"
+
+	"github.com/gocql/gocql/internal/lru"
 )
 
 const defaultMaxPreparedStmts = 1000
 
 // preparedLRU is the prepared statement cache
 type preparedLRU struct {
-	mu  sync.Mutex
+	mu  sync.RWMutex
 	lru *lru.Cache
 }
 
@@ -46,16 +47,14 @@ func (p *preparedLRU) remove(key string) bool {
 	return p.lru.Remove(key)
 }
 
-func (p *preparedLRU) execIfMissing(key string, fn func(lru *lru.Cache) *inflightPrepare) (*inflightPrepare, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
+func (p *preparedLRU) get(key string) (*inflightPrepare, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	val, ok := p.lru.Get(key)
 	if ok {
 		return val.(*inflightPrepare), true
 	}
-
-	return fn(p.lru), false
+	return nil, false
 }
 
 func (p *preparedLRU) keyFor(addr, keyspace, statement string) string {
