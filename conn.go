@@ -850,10 +850,10 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		call.timer.Reset(c.timeout)
 		timeoutCh = call.timer.C
 	}
-
-	var ctxDone <-chan struct{}
-	if ctx != nil {
-		ctxDone = ctx.Done()
+	if ctx == nil {
+		// ctx.Done becomes nil and such will be ignored in select
+		// also I am not really sure if ctx=nil can happen at this place
+		ctx = context.TODO()
 	}
 
 	select {
@@ -873,7 +873,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 		close(call.timeout)
 		c.handleTimeout()
 		return nil, ErrTimeoutNoResponse
-	case <-ctxDone:
+	case <-ctx.Done():
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.quit:
