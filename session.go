@@ -445,16 +445,8 @@ func (s *Session) getConn() *Conn {
 
 // returns routing key indexes and type info
 func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyInfo, error) {
-	s.routingKeyInfoCache.mu.Lock()
-
-	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
+	inflight, cached := s.routingKeyInfoCache.Get(stmt)
 	if cached {
-		// done accessing the cache
-		s.routingKeyInfoCache.mu.Unlock()
-		// the entry is an inflight struct similar to that used by
-		// Conn to prepare statements
-		inflight := entry.(*inflightCachedEntry)
-
 		// wait for any inflight work
 		inflight.wg.Wait()
 
@@ -468,11 +460,10 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	}
 
 	// create a new inflight entry while the data is created
-	inflight := new(inflightCachedEntry)
+	inflight = new(inflightCachedEntry)
 	inflight.wg.Add(1)
 	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(stmt, inflight)
-	s.routingKeyInfoCache.mu.Unlock()
+	s.routingKeyInfoCache.Add(stmt, inflight)
 
 	var (
 		info         *preparedStatment
@@ -1753,7 +1744,7 @@ func (c ColumnInfo) String() string {
 // routing key indexes LRU cache
 type routingKeyInfoLRU struct {
 	lru *lru.Cache
-	mu  sync.Mutex
+	mu  sync.RWMutex
 }
 
 type routingKeyInfo struct {
@@ -1780,6 +1771,22 @@ func (r *routingKeyInfoLRU) Max(max int) {
 	}
 	r.lru.MaxEntries = max
 	r.mu.Unlock()
+}
+
+func (r *routingKeyInfoLRU) Add(key string, inflight *inflightCachedEntry) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.lru.Add(key, inflight)
+}
+
+func (r *routingKeyInfoLRU) Get(key string) (*inflightCachedEntry, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	entry, cached := r.lru.Get(key)
+	if cached {
+		return entry.(*inflightCachedEntry), true
+	}
+	return nil, false
 }
 
 type inflightCachedEntry struct {
