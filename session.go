@@ -73,12 +73,6 @@ type Session struct {
 	isClosed bool
 }
 
-var queryPool = &sync.Pool{
-	New: func() interface{} {
-		return new(Query)
-	},
-}
-
 func addrsToHosts(addrs []string, defaultPort int) ([]*HostInfo, error) {
 	var hosts []*HostInfo
 	for _, hostport := range addrs {
@@ -327,7 +321,7 @@ func (s *Session) SetTrace(trace Tracer) {
 // value before the query is executed. Query is automatically prepared
 // if it has not previously been executed.
 func (s *Session) Query(stmt string, values ...interface{}) *Query {
-	qry := queryPool.Get().(*Query)
+	qry := new(Query)
 	qry.session = s
 	qry.stmt = stmt
 	qry.values = values
@@ -349,7 +343,7 @@ type QueryInfo struct {
 // During execution, the meta data of the prepared query will be routed to the
 // binding callback, which is responsible for producing the query argument values.
 func (s *Session) Bind(stmt string, b func(q *QueryInfo) ([]interface{}, error)) *Query {
-	qry := queryPool.Get().(*Query)
+	qry := new(Query)
 	qry.session = s
 	qry.stmt = stmt
 	qry.binding = b
@@ -1174,7 +1168,6 @@ func (q *Query) MapScanCAS(dest map[string]interface{}) (applied bool, err error
 // 		qry.Release()
 func (q *Query) Release() {
 	q.reset()
-	queryPool.Put(q)
 }
 
 // reset zeroes out all fields of a query so that it can be safely pooled.
