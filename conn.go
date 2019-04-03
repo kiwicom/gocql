@@ -320,13 +320,15 @@ type startupCoordinator struct {
 
 func (s *startupCoordinator) setupConn(ctx context.Context) error {
 	startupErr := make(chan error)
+	// call Done only once as each call creates a lock
+	ctxDone := ctx.Done()
 	go func() {
 		for range s.frameTicker {
 			err := s.conn.recv()
 			if err != nil {
 				select {
 				case startupErr <- err:
-				case <-ctx.Done():
+				case <-ctxDone:
 				}
 
 				return
@@ -339,7 +341,7 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 		err := s.options(ctx)
 		select {
 		case startupErr <- err:
-		case <-ctx.Done():
+		case <-ctxDone:
 		}
 	}()
 
@@ -348,7 +350,7 @@ func (s *startupCoordinator) setupConn(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-	case <-ctx.Done():
+	case <-ctxDone:
 		return errors.New("gocql: no response to connection startup within timeout")
 	}
 
