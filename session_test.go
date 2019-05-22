@@ -115,7 +115,11 @@ func TestQueryBasicAPI(t *testing.T) {
 		t.Fatalf("expected Query.Latency() to return 2, got %v", qry.Latency())
 	}
 
-	qry.AddAttempts(2, hostInfo(ip, 9042))
+	infos, err := hostInfo(ip, 9042)
+	if err != nil {
+		t.Fatalf("unexpected error from hostInfo(): %s", err.Error())
+	}
+	qry.AddAttempts(2, infos[0])
 	if qry.Attempts() != 4 {
 		t.Fatalf("expected Query.Attempts() to return 4, got %v", qry.Attempts())
 	}
@@ -211,8 +215,11 @@ func TestBatchBasicAPI(t *testing.T) {
 	if b.Attempts() != 1 {
 		t.Fatalf("expected batch.Attempts() to return %v, got %v", 1, b.Attempts())
 	}
-
-	b.AddAttempts(2, &hostInfo(ip, 9042))
+	infos, err := hostInfo(ip, 9042)
+	if err != nil {
+		t.Fatalf("unexpected error from hostInfo(): %s", err.Error())
+	}
+	b.AddAttempts(2, infos[0])
 	if b.Attempts() != 3 {
 		t.Fatalf("expected batch.Attempts() to return %v, got %v", 3, b.Attempts())
 	}
