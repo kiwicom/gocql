@@ -453,43 +453,49 @@ func (s *Session) getConn() *Conn {
 func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyInfo, error) {
 	s.routingKeyInfoCache.mu.Lock()
 
+	var inflight *inflightCachedEntry
 	entry, cached := s.routingKeyInfoCache.lru.Get(stmt)
 	if cached {
-		// done accessing the cache
-		s.routingKeyInfoCache.mu.Unlock()
 		// the entry is an inflight struct similar to that used by
 		// Conn to prepare statements
-		inflight := entry.(*inflightCachedEntry)
+		inflight = entry.(*inflightCachedEntry)
+	} else {
+		// create a new inflight entry while the data is created
+		inflight = new(inflightCachedEntry)
+		inflight.done = make(chan struct{})
+		s.routingKeyInfoCache.lru.Add(stmt, inflight)
+	}
+	s.routingKeyInfoCache.mu.Unlock()
 
-		// wait for any inflight work
-		inflight.wg.Wait()
+	if !cached {
+		go func() {
+			defer close(inflight.done)
+			// We need to use context.Background() since the result is shared across multiple goroutines with
+			// different contexts. In case we used ctx and it was canceled, we'd return context canceled error
+			// even to goroutines whose context has not been canceled.
+			routingKeyInfo, err, shouldCache := s.routingKeyInfoImpl(context.Background(), stmt)
 
+			inflight.value = routingKeyInfo
+			inflight.err = err
+
+			if !shouldCache {
+				s.routingKeyInfoCache.Remove(stmt)
+			}
+		}()
+	}
+
+	// wait for any inflight work
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-inflight.done:
 		if inflight.err != nil {
 			return nil, inflight.err
 		}
 
 		key, _ := inflight.value.(*routingKeyInfo)
-
 		return key, nil
 	}
-
-	// create a new inflight entry while the data is created
-	inflight := new(inflightCachedEntry)
-	inflight.wg.Add(1)
-	defer inflight.wg.Done()
-	s.routingKeyInfoCache.lru.Add(stmt, inflight)
-	s.routingKeyInfoCache.mu.Unlock()
-
-	routingKeyInfo, err, shouldCache := s.routingKeyInfoImpl(ctx, stmt)
-
-	inflight.value = routingKeyInfo
-	inflight.err = err
-
-	if !shouldCache {
-		s.routingKeyInfoCache.Remove(stmt)
-	}
-
-	return routingKeyInfo, nil
 }
 
 // routingKeyInfoImpl finds the routing key info and returns a possible error and a flag indicating whether
@@ -1822,7 +1828,7 @@ func (r *routingKeyInfoLRU) Max(max int) {
 }
 
 type inflightCachedEntry struct {
-	wg    sync.WaitGroup
+	done  chan struct{}
 	err   error
 	value interface{}
 }
