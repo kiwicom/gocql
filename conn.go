@@ -904,7 +904,7 @@ type preparedStatment struct {
 }
 
 type inflightPrepare struct {
-	wg  sync.WaitGroup
+	done chan struct{}
 	err error
 
 	preparedStatment *preparedStatment
@@ -915,27 +915,34 @@ func (c *Conn) prepareStatement(ctx context.Context, stmt string, tracer Tracer)
 
 	flight, ok := c.session.stmtsLRU.execIfMissing(stmtCacheKey, func(lru *lru.Cache) *inflightPrepare {
 		flight := new(inflightPrepare)
-		flight.wg.Add(1)
+		flight.done = make(chan struct{})
 		lru.Add(stmtCacheKey, flight)
 		return flight
 	})
 
-	if ok {
-		flight.wg.Wait()
+	if !ok {
+		go func() {
+			defer close(flight.done)
+
+			// We need to use context.Background() since the result is shared across multiple goroutines with
+			// different contexts. In case we used ctx and it was canceled, we'd return context canceled error
+			// even to goroutines whose context has not been canceled.
+			prepared, err := c.execPrepareStatement(context.Background(), stmt, tracer)
+			flight.preparedStatment = prepared
+			flight.err = err
+
+			if err != nil {
+				c.session.stmtsLRU.remove(stmtCacheKey)
+			}
+		}()
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-flight.done:
 		return flight.preparedStatment, flight.err
 	}
-
-	prepared, err := c.execPrepareStatement(ctx, stmt, tracer)
-	flight.preparedStatment = prepared
-	flight.err = err
-
-	flight.wg.Done()
-
-	if err != nil {
-		c.session.stmtsLRU.remove(stmtCacheKey)
-	}
-
-	return prepared, err
 }
 
 func (c *Conn) execPrepareStatement(ctx context.Context, stmt string, tracer Tracer) (*preparedStatment, error) {
