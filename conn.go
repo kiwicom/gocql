@@ -752,6 +752,7 @@ type writeCoalescer struct {
 	cond    *sync.Cond
 	buffers net.Buffers
 	timeout time.Duration
+	flushes uint64
 
 	// result of the write
 	err error
@@ -774,6 +775,7 @@ func (w *writeCoalescer) flushLocked() {
 	if w.err != nil {
 		w.buffers = nil
 	}
+	w.flushes++
 	w.cond.Broadcast()
 }
 
@@ -808,7 +810,7 @@ func (w *writeCoalescer) Write(p []byte) (int, error) {
 	}
 
 	w.buffers = append(w.buffers, p)
-	for len(w.buffers) != 0 {
+	for flushes := w.flushes; w.flushes == flushes; {
 		w.cond.Wait()
 	}
 
