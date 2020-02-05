@@ -30,7 +30,6 @@ var (
 		"com.datastax.bdp.cassandra.auth.DseAuthenticator",
 		"io.aiven.cassandra.auth.AivenAuthenticator",
 		"com.ericsson.bss.cassandra.ecaudit.auth.AuditPasswordAuthenticator",
-		"com.amazon.helenus.auth.HelenusAuthenticator",
 	}
 )
 
