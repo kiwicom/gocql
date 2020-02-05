@@ -1187,7 +1187,7 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		return iter
 	case *RequestErrUnprepared:
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
-		c.session.stmtsLRU.evictPreparedID(stmtCacheKey, x.StatementId)
+		c.session.stmtsLRU.remove(stmtCacheKey)
 		return c.executeQuery(ctx, qry)
 	case error:
 		return &Iter{err: x, framer: framer}
@@ -1328,7 +1328,7 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 		stmt, found := stmts[string(x.StatementId)]
 		if found {
 			key := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
-			c.session.stmtsLRU.evictPreparedID(key, x.StatementId)
+			c.session.stmtsLRU.remove(key)
 		}
 		return c.executeBatch(ctx, batch)
 	case *resultRowsFrame:
