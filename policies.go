@@ -884,7 +884,6 @@ func roundRobbin(hosts []*HostInfo) NextHost {
 func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	local := d.localHosts.get()
 	remote := d.remoteHosts.get()
-
 	hosts := make([]*HostInfo, len(local)+len(remote))
 	n := copy(hosts, local)
 	copy(hosts[n:], remote)
@@ -892,7 +891,7 @@ func (d *dcAwareRR) Pick(q ExecutableQuery) NextHost {
 	// TODO: use random chose-2 but that will require plumbing information
 	// about connection/host load to here
 	r := rand.New(randSource())
-	for _, l := range [][]*HostInfo{hosts[:len(local)], hosts[len(local):]} {
+	for _, l := range [][]*HostInfo{local, remote} {
 		r.Shuffle(len(l), func(i, j int) {
 			l[i], l[j] = l[j], l[i]
 		})
