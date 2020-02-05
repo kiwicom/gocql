@@ -228,9 +228,8 @@ func (h *HostInfo) PreferredIP() net.IP {
 
 func (h *HostInfo) DataCenter() string {
 	h.mu.RLock()
-	dc := h.dataCenter
-	h.mu.RUnlock()
-	return dc
+	defer h.mu.RUnlock()
+	return h.dataCenter
 }
 
 func (h *HostInfo) setDataCenter(dataCenter string) *HostInfo {
@@ -242,9 +241,8 @@ func (h *HostInfo) setDataCenter(dataCenter string) *HostInfo {
 
 func (h *HostInfo) Rack() string {
 	h.mu.RLock()
-	rack := h.rack
-	h.mu.RUnlock()
-	return rack
+	defer h.mu.RUnlock()
+	return h.rack
 }
 
 func (h *HostInfo) setRack(rack string) *HostInfo {
