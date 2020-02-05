@@ -9,5 +9,3 @@ require (
 	github.com/stretchr/testify v1.3.0 // indirect
 	gopkg.in/inf.v0 v0.9.1
 )
-
-go 1.13
