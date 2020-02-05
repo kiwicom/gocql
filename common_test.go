@@ -224,36 +224,31 @@ func staticAddressTranslator(newAddr net.IP, newPort int) AddressTranslator {
 }
 
 func assertTrue(t *testing.T, description string, value bool) {
-	t.Helper()
 	if !value {
-		t.Fatalf("expected %s to be true", description)
+		t.Errorf("expected %s to be true", description)
 	}
 }
 
 func assertEqual(t *testing.T, description string, expected, actual interface{}) {
-	t.Helper()
 	if expected != actual {
-		t.Fatalf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
+		t.Errorf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
 	}
 }
 
 func assertDeepEqual(t *testing.T, description string, expected, actual interface{}) {
-	t.Helper()
 	if !reflect.DeepEqual(expected, actual) {
-		t.Fatalf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
+		t.Errorf("expected %s to be (%+v) but was (%+v) instead", description, expected, actual)
 	}
 }
 
 func assertNil(t *testing.T, description string, actual interface{}) {
-	t.Helper()
 	if actual != nil {
-		t.Fatalf("expected %s to be (nil) but was (%+v) instead", description, actual)
+		t.Errorf("expected %s to be (nil) but was (%+v) instead", description, actual)
 	}
 }
 
 func assertNotNil(t *testing.T, description string, actual interface{}) {
-	t.Helper()
 	if actual == nil {
-		t.Fatalf("expected %s not to be (nil)", description)
+		t.Errorf("expected %s not to be (nil)", description)
 	}
 }

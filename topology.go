@@ -2,51 +2,12 @@ package gocql
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 )
 
-type hostTokens struct {
-	token token
-	hosts []*HostInfo
-}
-
-type tokenRingReplicas []hostTokens
-
-func (h tokenRingReplicas) Less(i, j int) bool { return h[i].token.Less(h[j].token) }
-func (h tokenRingReplicas) Len() int           { return len(h) }
-func (h tokenRingReplicas) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h tokenRingReplicas) replicasFor(t token) *hostTokens {
-	if len(h) == 0 {
-		return nil
-	}
-
-	p := sort.Search(len(h), func(i int) bool {
-		return !h[i].token.Less(t)
-	})
-
-	// TODO: simplify this
-	if p < len(h) && h[p].token == t {
-		return &h[p]
-	}
-
-	p--
-
-	if p >= len(h) {
-		// rollover
-		p = 0
-	} else if p < 0 {
-		// rollunder
-		p = len(h) - 1
-	}
-
-	return &h[p]
-}
-
 type placementStrategy interface {
-	replicaMap(tokenRing *tokenRing) tokenRingReplicas
+	replicaMap(hosts []*HostInfo, tokens []hostToken) map[token][]*HostInfo
 	replicationFactor(dc string) int
 }
 
@@ -102,28 +63,19 @@ func (s *simpleStrategy) replicationFactor(dc string) int {
 	return s.rf
 }
 
-func (s *simpleStrategy) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
-	tokens := tokenRing.tokens
-	ring := make(tokenRingReplicas, len(tokens))
+func (s *simpleStrategy) replicaMap(_ []*HostInfo, tokens []hostToken) map[token][]*HostInfo {
+	tokenRing := make(map[token][]*HostInfo, len(tokens))
 
 	for i, th := range tokens {
 		replicas := make([]*HostInfo, 0, s.rf)
-		seen := make(map[*HostInfo]bool)
-
 		for j := 0; j < len(tokens) && len(replicas) < s.rf; j++ {
 			h := tokens[(i+j)%len(tokens)]
-			if !seen[h.host] {
-				replicas = append(replicas, h.host)
-				seen[h.host] = true
-			}
+			replicas = append(replicas, h.host)
 		}
-
-		ring[i] = hostTokens{th.token, replicas}
+		tokenRing[th.token] = replicas
 	}
 
-	sort.Sort(ring)
-
-	return ring
+	return tokenRing
 }
 
 type networkTopology struct {
@@ -148,10 +100,10 @@ func (n *networkTopology) haveRF(replicaCounts map[string]int) bool {
 	return true
 }
 
-func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
-	dcRacks := make(map[string]map[string]struct{}, len(n.dcs))
+func (n *networkTopology) replicaMap(hosts []*HostInfo, tokens []hostToken) map[token][]*HostInfo {
+	dcRacks := make(map[string]map[string]struct{})
 
-	for _, h := range tokenRing.hosts {
+	for _, h := range hosts {
 		dc := h.DataCenter()
 		rack := h.Rack()
 
@@ -163,15 +115,14 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 		racks[rack] = struct{}{}
 	}
 
-	tokens := tokenRing.tokens
-	replicaRing := make(tokenRingReplicas, len(tokens))
+	tokenRing := make(map[token][]*HostInfo, len(tokens))
 
 	var totalRF int
 	for _, rf := range n.dcs {
 		totalRF += rf
 	}
 
-	for i, th := range tokenRing.tokens {
+	for i, th := range tokens {
 		// number of replicas per dc
 		// TODO: recycle these
 		replicasInDC := make(map[string]int, len(n.dcs))
@@ -247,20 +198,16 @@ func (n *networkTopology) replicaMap(tokenRing *tokenRing) tokenRingReplicas {
 			}
 		}
 
-		if len(replicas) == 0 {
-			panic(fmt.Sprintf("no replicas for token: %v", th.token))
-		} else if !replicas[0].Equal(th.host) {
-			panic(fmt.Sprintf("first replica is not the primary replica for the token: expected %v got %v", replicas[0].ConnectAddress(), th.host.ConnectAddress()))
+		if len(replicas) == 0 || replicas[0] != th.host {
+			panic("first replica is not the primary replica for the token")
 		}
 
-		replicaRing[i] = hostTokens{th.token, replicas}
+		tokenRing[th.token] = replicas
 	}
 
-	if len(replicaRing) != len(tokens) {
-		panic(fmt.Sprintf("token map different size to token ring: got %d expected %d", len(replicaRing), len(tokens)))
+	if len(tokenRing) != len(tokens) {
+		panic(fmt.Sprintf("token map different size to token ring: got %d expected %d", len(tokenRing), len(tokens)))
 	}
 
-	sort.Sort(replicaRing)
-
-	return replicaRing
+	return tokenRing
 }
