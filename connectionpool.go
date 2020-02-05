@@ -93,7 +93,6 @@ func connConfig(cfg *ClusterConfig) (*ConnConfig, error) {
 		CQLVersion:      cfg.CQLVersion,
 		Timeout:         cfg.Timeout,
 		ConnectTimeout:  cfg.ConnectTimeout,
-		Dialer:          cfg.Dialer,
 		Compressor:      cfg.Compressor,
 		Authenticator:   cfg.Authenticator,
 		AuthProvider:    cfg.AuthProvider,
