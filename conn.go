@@ -1187,8 +1187,11 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		return iter
 	case *RequestErrUnprepared:
 		stmtCacheKey := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, qry.stmt)
-		c.session.stmtsLRU.remove(stmtCacheKey)
-		return c.executeQuery(ctx, qry)
+		if c.session.stmtsLRU.remove(stmtCacheKey) {
+			return c.executeQuery(ctx, qry)
+		}
+
+		return &Iter{err: x, framer: framer}
 	case error:
 		return &Iter{err: x, framer: framer}
 	default:
@@ -1330,7 +1333,12 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 			key := c.session.stmtsLRU.keyFor(c.addr, c.currentKeyspace, stmt)
 			c.session.stmtsLRU.remove(key)
 		}
-		return c.executeBatch(ctx, batch)
+
+		if found {
+			return c.executeBatch(ctx, batch)
+		} else {
+			return &Iter{err: x, framer: framer}
+		}
 	case *resultRowsFrame:
 		iter := &Iter{
 			meta:    x.meta,
