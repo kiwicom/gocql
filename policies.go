@@ -424,7 +424,7 @@ func TokenAwareHostPolicy(fallback HostSelectionPolicy, opts ...func(*tokenAware
 // and the pointer in clusterMeta updated to point to the new value.
 type clusterMeta struct {
 	// replicas is map[keyspace]map[token]hosts
-	replicas  map[string]tokenRingReplicas
+	replicas  map[string]map[token][]*HostInfo
 	tokenRing *tokenRing
 }
 
@@ -465,14 +465,15 @@ func (t *tokenAwareHostPolicy) KeyspaceChanged(update KeyspaceUpdateEvent) {
 // It must be called with t.mu mutex locked.
 // meta must not be nil and it's replicas field will be updated.
 func (t *tokenAwareHostPolicy) updateReplicas(meta *clusterMeta, keyspace string) {
-	newReplicas := make(map[string]tokenRingReplicas, len(meta.replicas))
+	newReplicas := make(map[string]map[token][]*HostInfo, len(meta.replicas))
 
 	ks, err := t.getKeyspaceMetadata(keyspace)
 	if err == nil {
 		strat := getStrategy(ks)
 		if strat != nil {
 			if meta != nil && meta.tokenRing != nil {
-				newReplicas[keyspace] = strat.replicaMap(meta.tokenRing)
+				hosts := t.hosts.get()
+				newReplicas[keyspace] = strat.replicaMap(hosts, meta.tokenRing.tokens)
 			}
 		}
 	}
@@ -593,6 +594,14 @@ func (m *clusterMeta) resetTokenRing(partitioner string, hosts []*HostInfo) {
 	m.tokenRing = tokenRing
 }
 
+func (m *clusterMeta) getReplicas(keyspace string, token token) ([]*HostInfo, bool) {
+	if m.replicas == nil {
+		return nil, false
+	}
+	replicas, ok := m.replicas[keyspace][token]
+	return replicas, ok
+}
+
 func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 	if qry == nil {
 		return t.fallback.Pick(qry)
@@ -610,24 +619,22 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 		return t.fallback.Pick(qry)
 	}
 
-	token := meta.tokenRing.partitioner.Hash(routingKey)
-	ht := meta.replicas[qry.Keyspace()].replicasFor(token)
+	primaryEndpoint, token, endToken := meta.tokenRing.GetHostForPartitionKey(routingKey)
+	if primaryEndpoint == nil || endToken == nil {
+		return t.fallback.Pick(qry)
+	}
 
-	var replicas []*HostInfo
-	if ht == nil {
-		host, _ := meta.tokenRing.GetHostForToken(token)
-		replicas = []*HostInfo{host}
-	} else {
-		replicas = ht.hosts
-		if t.shuffleReplicas {
-			replicas = shuffleHosts(replicas)
-		}
+	replicas, ok := meta.getReplicas(qry.Keyspace(), endToken)
+	if !ok {
+		replicas = []*HostInfo{primaryEndpoint}
+	} else if t.shuffleReplicas {
+		replicas = shuffleHosts(replicas)
 	}
 
 	var (
 		fallbackIter NextHost
-		i, j         int
-		remote       []*HostInfo
+		i            int
+		j            int
 	)
 
 	used := make(map[*HostInfo]bool, len(replicas))
@@ -636,23 +643,18 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 			h := replicas[i]
 			i++
 
-			if !t.fallback.IsLocal(h) {
-				remote = append(remote, h)
-				continue
-			}
-
-			if h.IsUp() {
+			if h.IsUp() && t.fallback.IsLocal(h) {
 				used[h] = true
 				return selectedHost{info: h, token: token}
 			}
 		}
 
 		if t.nonLocalReplicasFallback {
-			for j < len(remote) {
-				h := remote[j]
+			for j < len(replicas) {
+				h := replicas[j]
 				j++
 
-				if h.IsUp() {
+				if h.IsUp() && !t.fallback.IsLocal(h) {
 					used[h] = true
 					return selectedHost{info: h, token: token}
 				}
@@ -671,7 +673,6 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 				return fallbackHost
 			}
 		}
-
 		return nil
 	}
 }

@@ -94,20 +94,20 @@ func TestHostPolicy_TokenAware_SimpleStrategy(t *testing.T) {
 
 	// The SimpleStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
+	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
 		"myKeyspace": {
-			{orderedToken("00"), []*HostInfo{hosts[0], hosts[1]}},
-			{orderedToken("25"), []*HostInfo{hosts[1], hosts[2]}},
-			{orderedToken("50"), []*HostInfo{hosts[2], hosts[3]}},
-			{orderedToken("75"), []*HostInfo{hosts[3], hosts[0]}},
+			orderedToken("00"): {hosts[0], hosts[1]},
+			orderedToken("25"): {hosts[1], hosts[2]},
+			orderedToken("50"): {hosts[2], hosts[3]},
+			orderedToken("75"): {hosts[3], hosts[0]},
 		},
 	}, policyInternal.getMetadataReadOnly().replicas)
 
 	// now the token ring is configured
 	query.RoutingKey([]byte("20"))
 	iter = policy.Pick(query)
-	iterCheck(t, iter, "0")
 	iterCheck(t, iter, "1")
+	iterCheck(t, iter, "2")
 }
 
 // Tests of the host pool host selection policy implementation
@@ -501,20 +501,20 @@ func TestHostPolicy_TokenAware(t *testing.T) {
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
+	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
 		"myKeyspace": {
-			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2]}},
-			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3]}},
-			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4]}},
-			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5]}},
-			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6]}},
-			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7]}},
-			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8]}},
-			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9]}},
-			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10]}},
-			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11]}},
-			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0]}},
-			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1]}},
+			orderedToken("05"): {hosts[0], hosts[1], hosts[2]},
+			orderedToken("10"): {hosts[1], hosts[2], hosts[3]},
+			orderedToken("15"): {hosts[2], hosts[3], hosts[4]},
+			orderedToken("20"): {hosts[3], hosts[4], hosts[5]},
+			orderedToken("25"): {hosts[4], hosts[5], hosts[6]},
+			orderedToken("30"): {hosts[5], hosts[6], hosts[7]},
+			orderedToken("35"): {hosts[6], hosts[7], hosts[8]},
+			orderedToken("40"): {hosts[7], hosts[8], hosts[9]},
+			orderedToken("45"): {hosts[8], hosts[9], hosts[10]},
+			orderedToken("50"): {hosts[9], hosts[10], hosts[11]},
+			orderedToken("55"): {hosts[10], hosts[11], hosts[0]},
+			orderedToken("60"): {hosts[11], hosts[0], hosts[1]},
 		},
 	}, policyInternal.getMetadataReadOnly().replicas)
 
@@ -590,25 +590,25 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 
 	// The NetworkTopologyStrategy above should generate the following replicas.
 	// It's handy to have as reference here.
-	assertDeepEqual(t, "replicas", map[string]tokenRingReplicas{
-		keyspace: {
-			{orderedToken("05"), []*HostInfo{hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]}},
-			{orderedToken("10"), []*HostInfo{hosts[1], hosts[2], hosts[3], hosts[4], hosts[5], hosts[6]}},
-			{orderedToken("15"), []*HostInfo{hosts[2], hosts[3], hosts[4], hosts[5], hosts[6], hosts[7]}},
-			{orderedToken("20"), []*HostInfo{hosts[3], hosts[4], hosts[5], hosts[6], hosts[7], hosts[8]}},
-			{orderedToken("25"), []*HostInfo{hosts[4], hosts[5], hosts[6], hosts[7], hosts[8], hosts[9]}},
-			{orderedToken("30"), []*HostInfo{hosts[5], hosts[6], hosts[7], hosts[8], hosts[9], hosts[10]}},
-			{orderedToken("35"), []*HostInfo{hosts[6], hosts[7], hosts[8], hosts[9], hosts[10], hosts[11]}},
-			{orderedToken("40"), []*HostInfo{hosts[7], hosts[8], hosts[9], hosts[10], hosts[11], hosts[0]}},
-			{orderedToken("45"), []*HostInfo{hosts[8], hosts[9], hosts[10], hosts[11], hosts[0], hosts[1]}},
-			{orderedToken("50"), []*HostInfo{hosts[9], hosts[10], hosts[11], hosts[0], hosts[1], hosts[2]}},
-			{orderedToken("55"), []*HostInfo{hosts[10], hosts[11], hosts[0], hosts[1], hosts[2], hosts[3]}},
-			{orderedToken("60"), []*HostInfo{hosts[11], hosts[0], hosts[1], hosts[2], hosts[3], hosts[4]}},
+	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
+		"myKeyspace": {
+			orderedToken("05"): {hosts[0], hosts[1], hosts[2], hosts[3], hosts[4], hosts[5]},
+			orderedToken("10"): {hosts[1], hosts[2], hosts[3], hosts[4], hosts[5], hosts[6]},
+			orderedToken("15"): {hosts[2], hosts[3], hosts[4], hosts[5], hosts[6], hosts[7]},
+			orderedToken("20"): {hosts[3], hosts[4], hosts[5], hosts[6], hosts[7], hosts[8]},
+			orderedToken("25"): {hosts[4], hosts[5], hosts[6], hosts[7], hosts[8], hosts[9]},
+			orderedToken("30"): {hosts[5], hosts[6], hosts[7], hosts[8], hosts[9], hosts[10]},
+			orderedToken("35"): {hosts[6], hosts[7], hosts[8], hosts[9], hosts[10], hosts[11]},
+			orderedToken("40"): {hosts[7], hosts[8], hosts[9], hosts[10], hosts[11], hosts[0]},
+			orderedToken("45"): {hosts[8], hosts[9], hosts[10], hosts[11], hosts[0], hosts[1]},
+			orderedToken("50"): {hosts[9], hosts[10], hosts[11], hosts[0], hosts[1], hosts[2]},
+			orderedToken("55"): {hosts[10], hosts[11], hosts[0], hosts[1], hosts[2], hosts[3]},
+			orderedToken("60"): {hosts[11], hosts[0], hosts[1], hosts[2], hosts[3], hosts[4]},
 		},
 	}, policyInternal.getMetadataReadOnly().replicas)
 
 	// now the token ring is configured
-	query.RoutingKey([]byte("23"))
+	query.RoutingKey([]byte("18"))
 	iter = policy.Pick(query)
 	// first should be hosts with matching token from the local DC
 	iterCheck(t, iter, "4")
@@ -620,9 +620,10 @@ func TestHostPolicy_TokenAware_NetworkStrategy(t *testing.T) {
 	iterCheck(t, iter, "8")
 }
 
-
-func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
-	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"))
+// Tests of the token-aware host selection policy implementation with a
+// DC aware round-robin host selection policy fallback with NonLocalReplicasFallback option enabled.
+func TestHostPolicy_TokenAware_DCAwareRR_NonLocalFallback(t *testing.T) {
+	policy := TokenAwareHostPolicy(DCAwareRoundRobinPolicy("local"), NonLocalReplicasFallback())
 	policyInternal := policy.(*tokenAwareHostPolicy)
 	policyInternal.getKeyspaceName = func() string {return "myKeyspace"}
 	policyInternal.getKeyspaceMetadata = func(ks string) (*KeyspaceMetadata, error) {
@@ -656,6 +657,9 @@ func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
 		{hostId: "10", connectAddress: net.IPv4(10, 0, 0, 11), tokens: []string{"55"}, dataCenter: "local"},
 		{hostId: "11", connectAddress: net.IPv4(10, 0, 0, 12), tokens: []string{"60"}, dataCenter: "remote2"},
 	}
+	for _, host := range hosts {
+		policy.AddHost(host)
+	}
 
 	policy.SetPartitioner("OrderedPartitioner")
 
@@ -676,24 +680,38 @@ func TestHostPolicy_TokenAware_Issue1274(t *testing.T) {
 	}
 	policy.KeyspaceChanged(KeyspaceUpdateEvent{Keyspace: "myKeyspace"})
 
-	cancel := make(chan struct{})
+	// The NetworkTopologyStrategy above should generate the following replicas.
+	// It's handy to have as reference here.
+	assertDeepEqual(t, "replicas", map[string]map[token][]*HostInfo{
+		"myKeyspace": {
+			orderedToken("05"): {hosts[0], hosts[1], hosts[2]},
+			orderedToken("10"): {hosts[1], hosts[2], hosts[3]},
+			orderedToken("15"): {hosts[2], hosts[3], hosts[4]},
+			orderedToken("20"): {hosts[3], hosts[4], hosts[5]},
+			orderedToken("25"): {hosts[4], hosts[5], hosts[6]},
+			orderedToken("30"): {hosts[5], hosts[6], hosts[7]},
+			orderedToken("35"): {hosts[6], hosts[7], hosts[8]},
+			orderedToken("40"): {hosts[7], hosts[8], hosts[9]},
+			orderedToken("45"): {hosts[8], hosts[9], hosts[10]},
+			orderedToken("50"): {hosts[9], hosts[10], hosts[11]},
+			orderedToken("55"): {hosts[10], hosts[11], hosts[0]},
+			orderedToken("60"): {hosts[11], hosts[0], hosts[1]},
+		},
+	}, policyInternal.getMetadataReadOnly().replicas)
 
 	// now the token ring is configured
-	for _, host := range hosts {
-		host := host
-		go func() {
-			for {
-				select {
-				case <-cancel:
-					return
-				default:
-					policy.AddHost(host)
-					policy.RemoveHost(host)
-				}
-			}
-		}()
+	query.RoutingKey([]byte("18"))
+	iter = policy.Pick(query)
+	// first should be host with matching token from the local DC
+	if actual := iter(); actual.Info().HostID() != "4" {
+		t.Errorf("Expected peer 4 but was %s", actual.Info().HostID())
 	}
-
-	time.Sleep(100 * time.Millisecond)
-	close(cancel)
+	// rest should be hosts with matching token from remote DCs
+	if actual := iter(); actual.Info().HostID() != "3" {
+		t.Errorf("Expected peer 3 but was %s", actual.Info().HostID())
+	}
+	if actual := iter(); actual.Info().HostID() != "5" {
+		t.Errorf("Expected peer 5 but was %s", actual.Info().HostID())
+	}
+	// rest depend on fallback strategy
 }
