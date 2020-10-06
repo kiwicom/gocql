@@ -1,19 +1,11 @@
 gocql
 =====
 
-[![Build Status](https://travis-ci.org/scylladb/gocql.svg?branch=master)](https://travis-ci.org/scylladb/gocql)
-[![GoDoc](https://godoc.org/github.com/scylladb/gocql?status.svg)](https://godoc.org/github.com/scylladb/gocql)
+[![Build Status](https://travis-ci.org/kiwicom/gocql.svg?branch=master)](https://travis-ci.org/kiwicom/gocql)
+[![GoDoc](https://godoc.org/github.com/kiwicom/gocql?status.svg)](https://godoc.org/github.com/kiwicom/gocql)
 
-This is a fork of [gocql](https://github.com/gocql/gocql) package that we created at Scylla.
-It contains extensions to tokenAwareHostPolicy supported by the Scylla 2.3 and onwards.
-It allows driver to select a connection to a particular shard on a host based on the token.
-This eliminates passing data between shards and significantly reduces latency. 
-The protocol extension spec is available [here](https://github.com/scylladb/scylla/blob/master/docs/protocol-extensions.md).
-
-There are open pull requests to merge the functionality to the upstream project:
- 
-* [gocql/gocql#1210](https://github.com/gocql/gocql/pull/1210)
-* [gocql/gocql#1211](https://github.com/gocql/gocql/pull/1211).
+This is a fork of [gocql/gocql](https://github.com/gocql/gocql) and [scylladb/gocql](https://github.com/scylladb/gocql)
+packages.
 
 Installation
 ------------
