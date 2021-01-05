@@ -1092,6 +1092,10 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		call.streamObserverContext = c.streamObserver.StreamContext(ctx)
 	}
 
+	if c.streamObserver != nil {
+		call.streamObserverContext = c.streamObserver.StreamContext(ctx)
+	}
+
 	c.mu.Lock()
 	existingCall := c.calls[stream]
 	if existingCall == nil {
@@ -1223,6 +1227,52 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		close(call.timeout)
 		return nil, ErrConnectionClosed
 	}
+}
+
+// ObservedStream observes a single request/response stream.
+type ObservedStream struct {
+	// Host of the connection used to send the stream.
+	Host *HostInfo
+}
+
+// StreamObserver is notified about request/response pairs.
+// Streams are created for executing queries/batches or
+// internal requests to the database and might live longer than
+// execution of the query - the stream is still tracked until
+// response arrives so that stream IDs are not reused.
+type StreamObserver interface {
+	// StreamContext is called before creating a new stream.
+	// ctx is context passed to Session.Query / Session.Batch,
+	// but might also be an internal context (for example
+	// for internal requests that use control connection).
+	// StreamContext might return nil if it is not interested
+	// in the details of this stream.
+	// StreamContext is called before the stream is created
+	// and the returned StreamObserverContext might be discarded
+	// without any methods called on the StreamObserverContext if
+	// creation of the stream fails.
+	// Note that if you don't need to track per-stream data,
+	// you can always return the same StreamObserverContext.
+	StreamContext(ctx context.Context) StreamObserverContext
+}
+
+// StreamObserverContext is notified about state of a stream.
+// A stream is started every time a request is written to the server
+// and is finished when a response is received.
+// It is abandoned when the underlying network connection is closed
+// before receiving a response.
+type StreamObserverContext interface {
+	// StreamStarted is called when the stream is started.
+	// This happens just before a request is written to the wire.
+	StreamStarted(observedStream ObservedStream)
+
+	// StreamAbandoned is called when we stop waiting for response.
+	// This happens when the underlying network connection is closed.
+	// StreamFinished won't be called if StreamAbandoned is.
+	StreamAbandoned(observedStream ObservedStream)
+
+	// StreamFinished is called when we receive a response for the stream.
+	StreamFinished(observedStream ObservedStream)
 }
 
 // ObservedStream observes a single request/response stream.
