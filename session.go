@@ -854,6 +854,9 @@ type Query struct {
 	// In effect if the query is of the form "INSERT/UPDATE/DELETE ... IF ..."
 	// For more details see https://docs.scylladb.com/using-scylla/lwt/
 	lwt bool
+
+	// lwtMutex protects lwt.
+	lwtMutex sync.RWMutex
 }
 
 func (q *Query) defaultsFromSession() {
@@ -1072,7 +1075,9 @@ func (q *Query) GetRoutingKey() ([]byte, error) {
 		return nil, err
 	}
 	if routingKeyInfo != nil {
+		q.lwtMutex.Lock()
 		q.lwt = routingKeyInfo.lwt
+		q.lwtMutex.Unlock()
 	}
 	return createRoutingKey(routingKeyInfo, q.values)
 }
@@ -1129,6 +1134,8 @@ func (q *Query) IsIdempotent() bool {
 }
 
 func (q *Query) IsLWT() bool {
+	q.lwtMutex.RLock()
+	defer q.lwtMutex.RUnlock()
 	return q.lwt
 }
 
@@ -1602,6 +1609,9 @@ type Batch struct {
 	// It is sufficient that one batch entry is a conditional query for the
 	// whole batch to be considered for LWT optimization.
 	lwt bool
+
+	// lwtMutex protects lwt.
+	lwtMutex sync.RWMutex
 }
 
 // NewBatch creates a new batch operation without defaults from the cluster
@@ -1693,6 +1703,8 @@ func (b *Batch) IsIdempotent() bool {
 }
 
 func (b *Batch) IsLWT() bool {
+	b.lwtMutex.RLock()
+	defer b.lwtMutex.RUnlock()
 	return b.lwt
 }
 
@@ -1837,7 +1849,9 @@ func (b *Batch) GetRoutingKey() ([]byte, error) {
 		return nil, err
 	}
 	if routingKeyInfo != nil {
+		b.lwtMutex.Lock()
 		b.lwt = routingKeyInfo.lwt
+		b.lwtMutex.Unlock()
 	}
 
 	return createRoutingKey(routingKeyInfo, entry.Args)

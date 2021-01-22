@@ -1236,7 +1236,9 @@ func (c *Conn) executeQuery(ctx context.Context, qry *Query) *Iter {
 		}
 
 		// Set "lwt" property in the query if it is present in preparedMetadata
+		qry.lwtMutex.Lock()
 		qry.lwt = info.request.lwt
+		qry.lwtMutex.Unlock()
 	} else {
 		frame = &writeQueryFrame{
 			statement:     qry.stmt,
@@ -1442,7 +1444,9 @@ func (c *Conn) executeBatch(ctx context.Context, batch *Batch) *Iter {
 
 	// The batch is considered to be conditional if even one of the
 	// statements is conditional.
+	batch.lwtMutex.Lock()
 	batch.lwt = hasLwtEntries
+	batch.lwtMutex.Unlock()
 
 	// TODO: should batch support tracing?
 	framer, err := c.exec(batch.Context(), req, nil)
