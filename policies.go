@@ -304,7 +304,8 @@ type HostSelectionPolicy interface {
 	KeyspaceChanged(KeyspaceUpdateEvent)
 	Init(*Session)
 	IsLocal(host *HostInfo) bool
-	//Pick returns an iteration function over selected hosts
+	// Pick returns an iteration function over selected hosts.
+	// The returned NextHost function won't be called concurrently by the driver.
 	Pick(ExecutableQuery) NextHost
 }
 
