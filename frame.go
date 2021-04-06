@@ -364,9 +364,6 @@ type FrameHeaderObserver interface {
 
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
-	r io.Reader
-	w io.Writer
-
 	proto byte
 	// flags are for outgoing flags, enabling compression and tracing etc
 	flags    byte
@@ -388,7 +385,7 @@ type framer struct {
 	customPayload map[string][]byte
 }
 
-func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *framer {
+func newFramer(compressor Compressor, version byte) *framer {
 	f := &framer{
 		wbuf:       make([]byte, defaultBufSize),
 		readBuffer: make([]byte, defaultBufSize),
@@ -413,10 +410,8 @@ func newFramer(r io.Reader, w io.Writer, compressor Compressor, version byte) *f
 	f.flags = flags
 	f.headSize = headSize
 
-	f.r = r
 	f.rbuf = f.readBuffer[:0]
 
-	f.w = w
 	f.wbuf = f.wbuf[:0]
 
 	f.header = nil
@@ -488,12 +483,12 @@ func (f *framer) payload() {
 }
 
 // reads a frame form the wire into the framers buffer
-func (f *framer) readFrame(head *frameHeader) error {
+func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 	if head.length < 0 {
 		return fmt.Errorf("frame body length can not be less than 0: %d", head.length)
 	} else if head.length > maxFrameSize {
 		// need to free up the connection to be used again
-		_, err := io.CopyN(ioutil.Discard, f.r, int64(head.length))
+		_, err := io.CopyN(ioutil.Discard, r, int64(head.length))
 		if err != nil {
 			return fmt.Errorf("error whilst trying to discard frame with invalid length: %v", err)
 		}
@@ -508,7 +503,7 @@ func (f *framer) readFrame(head *frameHeader) error {
 	}
 
 	// assume the underlying reader takes care of timeouts and retries
-	n, err := io.ReadFull(f.r, f.rbuf)
+	n, err := io.ReadFull(r, f.rbuf)
 	if err != nil {
 		return fmt.Errorf("unable to read frame body: read %d/%d bytes: %v", n, head.length, err)
 	}
@@ -766,12 +761,12 @@ func (f *framer) finishWrite() error {
 	length := len(f.wbuf) - f.headSize
 	f.setLength(length)
 
-	_, err := f.w.Write(f.wbuf)
-	if err != nil {
-		return err
-	}
-
 	return nil
+}
+
+func (f *framer) writeTo(w io.Writer) error {
+	_, err := w.Write(f.wbuf)
+	return err
 }
 
 func (f *framer) readTrace() {

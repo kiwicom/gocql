@@ -678,11 +678,14 @@ func TestStream0(t *testing.T) {
 	const expErr = "gocql: received unexpected frame on stream 0"
 
 	var buf bytes.Buffer
-	f := newFramer(nil, &buf, nil, protoVersion4)
+	f := newFramer(nil, protoVersion4)
 	f.writeHeader(0, opResult, 0)
 	f.writeInt(resultKindVoid)
 	f.wbuf[0] |= 0x80
 	if err := f.finishWrite(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.writeTo(&buf); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1124,7 +1127,7 @@ func (srv *TestServer) serve() {
 					srv.onRecv(framer)
 				}
 
-				go srv.process(framer)
+				go srv.process(conn, framer)
 			}
 		}(conn)
 	}
@@ -1162,7 +1165,7 @@ func (srv *TestServer) errorLocked(err interface{}) {
 	srv.t.Error(err)
 }
 
-func (srv *TestServer) process(f *framer) {
+func (srv *TestServer) process(conn net.Conn, f *framer) {
 	head := f.header
 	if head == nil {
 		srv.errorLocked("process frame with a nil header")
@@ -1248,6 +1251,10 @@ func (srv *TestServer) process(f *framer) {
 	if err := f.finishWrite(); err != nil {
 		srv.errorLocked(err)
 	}
+
+	if err := f.writeTo(conn); err != nil {
+		srv.errorLocked(err)
+	}
 }
 
 func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
@@ -1256,9 +1263,9 @@ func (srv *TestServer) readFrame(conn net.Conn) (*framer, error) {
 	if err != nil {
 		return nil, err
 	}
-	framer := newFramer(conn, conn, nil, srv.protocol)
+	framer := newFramer(nil, srv.protocol)
 
-	err = framer.readFrame(&head)
+	err = framer.readFrame(conn, &head)
 	if err != nil {
 		return nil, err
 	}

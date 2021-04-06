@@ -656,8 +656,8 @@ func (c *Conn) recv(ctx context.Context) error {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
-		framer := newFramer(c, c, c.compressor, c.version)
-		if err := framer.readFrame(&head); err != nil {
+		framer := newFramer(c.compressor, c.version)
+		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
 		go c.session.handleEvent(framer)
@@ -665,8 +665,8 @@ func (c *Conn) recv(ctx context.Context) error {
 	} else if head.stream <= 0 {
 		// reserved stream that we dont use, probably due to a protocol error
 		// or a bug in Cassandra, this should be an error, parse it and return.
-		framer := newFramer(c, c, c.compressor, c.version)
-		if err := framer.readFrame(&head); err != nil {
+		framer := newFramer(c.compressor, c.version)
+		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
 
@@ -691,7 +691,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		panic(fmt.Sprintf("call has incorrect streamID: got %d expected %d", call.streamID, head.stream))
 	}
 
-	err = call.framer.readFrame(&head)
+	err = call.framer.readFrame(c, &head)
 	if err != nil {
 		// only net errors should cause the connection to be closed. Though
 		// cassandra returning corrupt frames will be returned here as well.
@@ -884,7 +884,7 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	}
 
 	// resp is basically a waiting semaphore protecting the framer
-	framer := newFramer(c, c, c.compressor, c.version)
+	framer := newFramer(c.compressor, c.version)
 
 	call := &callReq{
 		framer:   framer,
@@ -909,6 +909,14 @@ func (c *Conn) exec(ctx context.Context, req frameWriter, tracer Tracer) (*frame
 	}
 
 	err := req.writeFrame(framer, stream)
+	if err != nil {
+		// We failed to serialize the frame into a buffer.
+		// This should not affect the connection, we just free the current call.
+		c.releaseStream(call)
+		return nil, err
+	}
+
+	err = framer.writeTo(c)
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout, close the timeout chan here. Im not entirely sure
