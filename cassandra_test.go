@@ -2087,7 +2087,8 @@ func TestTokenAwareConnPool(t *testing.T) {
 	expectedPoolSize := cluster.NumConns * len(session.ring.allHosts())
 
 	// wait for pool to fill
-	for i := 0; i < 10; i++ {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
 		if session.pool.Size() == expectedPoolSize {
 			break
 		}
