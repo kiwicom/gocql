@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"sync"
 )
 
 type StdLogger interface {
@@ -13,13 +14,30 @@ type StdLogger interface {
 }
 
 type testLogger struct {
+	mu      sync.Mutex
 	capture bytes.Buffer
 }
 
-func (l *testLogger) Print(v ...interface{})                 { fmt.Fprint(&l.capture, v...) }
-func (l *testLogger) Printf(format string, v ...interface{}) { fmt.Fprintf(&l.capture, format, v...) }
-func (l *testLogger) Println(v ...interface{})               { fmt.Fprintln(&l.capture, v...) }
-func (l *testLogger) String() string                         { return l.capture.String() }
+func (l *testLogger) Print(v ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprint(&l.capture, v...)
+}
+func (l *testLogger) Printf(format string, v ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(&l.capture, format, v...)
+}
+func (l *testLogger) Println(v ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintln(&l.capture, v...)
+}
+func (l *testLogger) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.capture.String()
+}
 
 type defaultLogger struct{}
 
