@@ -27,4 +27,6 @@ func (l *defaultLogger) Print(v ...interface{})                 { log.Print(v...
 func (l *defaultLogger) Printf(format string, v ...interface{}) { log.Printf(format, v...) }
 func (l *defaultLogger) Println(v ...interface{})               { log.Println(v...) }
 
+// Logger for logging messages.
+// Deprecated: Use ClusterConfig.Logger instead.
 var Logger StdLogger = &defaultLogger{}
