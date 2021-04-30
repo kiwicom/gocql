@@ -2073,53 +2073,6 @@ func TestRoutingKey(t *testing.T) {
 	}
 }
 
-// Integration test of the token-aware policy-based connection pool
-func TestTokenAwareConnPool(t *testing.T) {
-	cluster := createCluster()
-	cluster.PoolConfig.HostSelectionPolicy = TokenAwareHostPolicy(RoundRobinHostPolicy())
-
-	// force metadata query to page
-	cluster.PageSize = 1
-
-	session := createSessionFromCluster(cluster, t)
-	defer session.Close()
-
-	expectedPoolSize := cluster.NumConns * len(session.ring.allHosts())
-
-	// wait for pool to fill
-	for i := 0; i < 10; i++ {
-		if session.pool.Size() == expectedPoolSize {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	if expectedPoolSize != session.pool.Size() {
-		t.Errorf("Expected pool size %d but was %d", expectedPoolSize, session.pool.Size())
-	}
-
-	// add another cf so there are two pages when fetching table metadata from our keyspace
-	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware_other_cf (id int, data text, PRIMARY KEY (id))"); err != nil {
-		t.Fatalf("failed to create test_token_aware table with err: %v", err)
-	}
-
-	if err := createTable(session, "CREATE TABLE gocql_test.test_token_aware (id int, data text, PRIMARY KEY (id))"); err != nil {
-		t.Fatalf("failed to create test_token_aware table with err: %v", err)
-	}
-	query := session.Query("INSERT INTO test_token_aware (id, data) VALUES (?,?)", 42, "8 * 6 =")
-	if err := query.Exec(); err != nil {
-		t.Fatalf("failed to insert with err: %v", err)
-	}
-
-	query = session.Query("SELECT data FROM test_token_aware where id = ?", 42).Consistency(One)
-	var data string
-	if err := query.Scan(&data); err != nil {
-		t.Error(err)
-	}
-
-	// TODO add verification that the query went to the correct host
-}
-
 func TestNegativeStream(t *testing.T) {
 	session := createSession(t)
 	defer session.Close()
