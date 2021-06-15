@@ -2172,6 +2172,11 @@ func marshalUDT(info TypeInfo, value interface{}) ([]byte, error) {
 		for _, e := range udt.Elements {
 			val, ok := v[e.Name]
 			if !ok {
+				// If we don't have a value for the field, append null.
+				// We can't skip the fields in UDT, the fields order must exactly correspond to the definition.
+				// Note: Technically, we can skip nulls at the end of the UDT, but we don't know now if we will
+				// write some non-null value for later fields. Simplest is to write null always.
+				buf = appendBytes(buf, nil)
 				continue
 			}
 
