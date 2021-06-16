@@ -1103,6 +1103,10 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		return nil, fmt.Errorf("attempting to use stream already in use: %d -> %d", stream, existingCall.streamID)
 	}
 
+	// After this point, we need to either read from call.resp or close(call.timeout)
+	// since closeWithError can try to write a connection close error to call.resp.
+	// If we don't close(call.timeout) or read from call.resp, closeWithError can deadlock.
+
 	if tracer != nil {
 		framer.trace()
 	}
@@ -1115,6 +1119,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 
 	err := req.buildFrame(framer, stream)
 	if err != nil {
+		// closeWithError will block waiting for this stream to either receive a response
+		// or for us to timeout.
+		close(call.timeout)
 		// We failed to serialize the frame into a buffer.
 		// This should not affect the connection as we didn't write anything. We just free the current call.
 		c.mu.Lock()
@@ -1130,6 +1137,10 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 
 	n, err := c.w.writeContext(ctx, framer.buf)
 	if err != nil {
+		// closeWithError will block waiting for this stream to either receive a response
+		// or for us to timeout, close the timeout chan here. Im not entirely sure
+		// but we should not get a response after an error on the write side.
+		close(call.timeout)
 		if (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) && n == 0 {
 			// We have not started to write this frame.
 			// Release the stream as no response can come from the server on the stream.
@@ -1142,10 +1153,6 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 			// check above could fail.
 			c.releaseStream(call)
 		} else {
-			// closeWithError will block waiting for this stream to either receive a response
-			// or for us to timeout, close the timeout chan here. Im not entirely sure
-			// but we should not get a response after an error on the write side.
-			close(call.timeout)
 			// I think this is the correct thing to do, im not entirely sure. It is not
 			// ideal as readers might still get some data, but they probably wont.
 			// Here we need to be careful as the stream is not available and if all
@@ -1213,6 +1220,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		close(call.timeout)
 		return nil, ctx.Err()
 	case <-c.ctx.Done():
+		close(call.timeout)
 		return nil, ErrConnectionClosed
 	}
 }
