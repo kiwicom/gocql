@@ -318,9 +318,9 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		},
 		ctx:            ctx,
 		cancel:         cancel,
+		logger:         cfg.logger(),
 		streamObserver: s.streamObserver,
 		writeTimeout:   writeTimeout,
-		logger:         cfg.logger(),
 	}
 
 	if err := c.init(ctx); err != nil {
