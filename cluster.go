@@ -158,6 +158,7 @@ type ClusterConfig struct {
 
 	// Dialer will be used to establish all connections created for this Cluster.
 	// If not provided, a default dialer configured with ConnectTimeout will be used.
+	// Dialer is ignored if HostDialer is provided.
 	Dialer Dialer
 
 	// DisableShardAwarePort will prevent the driver from connecting to Scylla's shard-aware port,
