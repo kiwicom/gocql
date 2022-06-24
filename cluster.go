@@ -37,8 +37,10 @@ type ClusterConfig struct {
 	// address, which is used to index connected hosts. If the domain name specified
 	// resolves to more than 1 IP address then the driver may connect multiple times to
 	// the same host, and will not mark the node being down or up from events.
-	Hosts      []string
-	CQLVersion string // CQL version (default: 3.0.0)
+	Hosts []string
+
+	// CQL version (default: 3.0.0)
+	CQLVersion string
 
 	// ProtoVersion sets the version of the native protocol to use, this will
 	// enable features in the driver for specific protocol versions, generally this
