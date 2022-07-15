@@ -316,8 +316,12 @@ func (p *scyllaConnPicker) randomConn() *Conn {
 }
 
 func (p *scyllaConnPicker) shardOf(token int64Token) int {
-	shards := uint64(p.nrShards)
-	z := uint64(token+math.MinInt64) << p.msbIgnore
+	return shardOf(token, p.nrShards, p.msbIgnore)
+}
+
+func shardOf(token int64Token, nrShards int, msbIgnore uint64) int {
+	shards := uint64(nrShards)
+	z := uint64(token+math.MinInt64) << msbIgnore
 	lo := z & 0xffffffff
 	hi := (z >> 32) & 0xffffffff
 	mul1 := lo * shards
