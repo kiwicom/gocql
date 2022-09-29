@@ -240,6 +240,9 @@ type ClusterConfig struct {
 	// If not specified, defaults to the global gocql.Logger.
 	Logger StdLogger
 
+	// ConcurrencyLimiter used to limit the number of in-flight streams.
+	ConcurrencyLimiter ConcurrencyLimiter
+
 	// internal config for testing
 	disableControlConn bool
 	disableInit        bool

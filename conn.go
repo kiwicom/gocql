@@ -93,13 +93,13 @@ func (p PasswordAuthenticator) Success(data []byte) error {
 // to true if no Config is set. Most users should set SslOptions.Config to a *tls.Config.
 // SslOptions and Config.InsecureSkipVerify interact as follows:
 //
-//  Config.InsecureSkipVerify | EnableHostVerification | Result
-//  Config is nil             | false                  | do not verify host
-//  Config is nil             | true                   | verify host
-//  false                     | false                  | verify host
-//  true                      | false                  | do not verify host
-//  false                     | true                   | verify host
-//  true                      | true                   | verify host
+//	Config.InsecureSkipVerify | EnableHostVerification | Result
+//	Config is nil             | false                  | do not verify host
+//	Config is nil             | true                   | verify host
+//	false                     | false                  | verify host
+//	true                      | false                  | do not verify host
+//	false                     | true                   | verify host
+//	true                      | true                   | verify host
 type SslOptions struct {
 	*tls.Config
 
@@ -572,11 +572,16 @@ func (c *Conn) closeWithError(err error) {
 		case req.resp <- callResp{err: err}:
 		case <-req.timeout:
 		}
-		if req.streamObserverContext != nil {
-			req.streamObserverEndOnce.Do(func() {
-				req.streamObserverContext.StreamAbandoned(ObservedStream{
-					Host: c.host,
-				})
+		if req.streamObserverContext != nil || c.session.concurrencyLimiter != nil {
+			req.streamEndOnce.Do(func() {
+				if req.streamObserverContext != nil {
+					req.streamObserverContext.StreamAbandoned(ObservedStream{
+						Host: c.host,
+					})
+				}
+				if c.session.concurrencyLimiter != nil {
+					c.session.concurrencyLimiter.Done()
+				}
 			})
 		}
 	}
@@ -789,11 +794,16 @@ func (c *Conn) releaseStream(call *callReq) {
 
 	c.streams.Clear(call.streamID)
 
-	if call.streamObserverContext != nil {
-		call.streamObserverEndOnce.Do(func() {
-			call.streamObserverContext.StreamFinished(ObservedStream{
-				Host: c.host,
-			})
+	if call.streamObserverContext != nil || c.session.concurrencyLimiter != nil {
+		call.streamEndOnce.Do(func() {
+			if call.streamObserverContext != nil {
+				call.streamObserverContext.StreamFinished(ObservedStream{
+					Host: c.host,
+				})
+			}
+			if c.session.concurrencyLimiter != nil {
+				c.session.concurrencyLimiter.Done()
+			}
 		})
 	}
 }
@@ -815,9 +825,9 @@ type callReq struct {
 	// streamObserverContext is notified about events regarding this stream
 	streamObserverContext StreamObserverContext
 
-	// streamObserverEndOnce ensures that either StreamAbandoned or StreamFinished is called,
+	// streamEndOnce ensures that either StreamAbandoned or StreamFinished is called,
 	// but not both.
-	streamObserverEndOnce sync.Once
+	streamEndOnce sync.Once
 }
 
 type callResp struct {

@@ -25,9 +25,19 @@ type ExecutableQuery interface {
 type queryExecutor struct {
 	pool   *policyConnPool
 	policy HostSelectionPolicy
+
+	// concurrencyLimiter used to wait or nil.
+	concurrencyLimiter ConcurrencyLimiter
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn) *Iter {
+	if q.concurrencyLimiter != nil {
+		err := q.concurrencyLimiter.Wait(ctx, conn.host)
+		if err != nil {
+			return &Iter{err: err}
+		}
+	}
+
 	start := time.Now()
 	iter := qry.execute(ctx, conn)
 	end := time.Now()
