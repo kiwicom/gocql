@@ -11,6 +11,7 @@ const bucketBits = 64
 // IDGenerator tracks and allocates streams which are in use.
 type IDGenerator struct {
 	NumStreams   int
+	MaxStreamID  int
 	inuseStreams int32
 	numBuckets   uint32
 
@@ -20,22 +21,37 @@ type IDGenerator struct {
 }
 
 func New(protocol int) *IDGenerator {
-	maxStreams := 128
+	return NewLimited(protocol, 0)
+}
+
+func NewLimited(protocol int, maxStreams int) *IDGenerator {
+	protocolMax := 128
 	if protocol > 2 {
-		maxStreams = 32768
+		protocolMax = 32768
+	}
+	if maxStreams <= 0 || maxStreams > protocolMax {
+		maxStreams = protocolMax
 	}
 
-	buckets := maxStreams / 64
+	buckets := (maxStreams + 63) / 64
+	maxStreamID := buckets * 64
 	// reserve stream 0
 	streams := make([]uint64, buckets)
 	streams[0] = 1 << 63
 
-	return &IDGenerator{
-		NumStreams: maxStreams,
-		streams:    streams,
-		numBuckets: uint32(buckets),
-		offset:     uint32(buckets) - 1,
+	s := &IDGenerator{
+		NumStreams:  maxStreams,
+		MaxStreamID: maxStreamID,
+		streams:     streams,
+		numBuckets:  uint32(buckets),
+		offset:      uint32(buckets) - 1,
 	}
+
+	for i := 0; i < maxStreamID-maxStreams-1; i++ {
+		s.GetStream()
+	}
+
+	return s
 }
 
 func streamFromBucket(bucket, streamInBucket int) int {
@@ -136,5 +152,5 @@ func (s *IDGenerator) Clear(stream int) (inuse bool) {
 }
 
 func (s *IDGenerator) Available() int {
-	return s.NumStreams - int(atomic.LoadInt32(&s.inuseStreams)) - 1
+	return s.MaxStreamID - int(atomic.LoadInt32(&s.inuseStreams)) - 1
 }

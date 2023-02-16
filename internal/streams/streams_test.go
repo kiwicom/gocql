@@ -58,6 +58,31 @@ func TestFullStreams(t *testing.T) {
 	}
 }
 
+func TestFullStreamsLimited(t *testing.T) {
+	max := 20
+	streams := NewLimited(3, max)
+
+	if got := streams.Available(); got != max {
+		t.Fatalf("available should reflect the number of streams, expected %d, got %d", max, got)
+	}
+
+	for i := 0; i < max; i++ {
+		stream, ok := streams.GetStream()
+		if !ok {
+			t.Fatalf("should get stream when not all in use: stream=%d", stream)
+		}
+	}
+
+	stream, ok := streams.GetStream()
+	if ok {
+		t.Fatalf("should not get stream when all in use: stream=%d", stream)
+	}
+
+	if got := streams.Available(); got != 0 {
+		t.Fatalf("available should reflect the number of streams, expected zero, got %d", got)
+	}
+}
+
 func TestClearStreams(t *testing.T) {
 	streams := New(1)
 	for i := range streams.streams {

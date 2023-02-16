@@ -287,7 +287,7 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 		errorHandler:  errorHandler,
 		compressor:    cfg.Compressor,
 		session:       s,
-		streams:       streams.New(cfg.ProtoVersion),
+		streams:       streams.NewLimited(cfg.ProtoVersion, s.cfg.MaxRequestsPerConn),
 		host:          host,
 		isSchemaV2:    true, // Try using "system.peers_v2" until proven otherwise
 		frameObserver: s.frameObserver,
@@ -716,7 +716,7 @@ func (c *Conn) recv(ctx context.Context) error {
 		})
 	}
 
-	if head.stream > c.streams.NumStreams {
+	if head.stream > c.streams.MaxStreamID {
 		return fmt.Errorf("gocql: frame header stream is beyond call expected bounds: %d", head.stream)
 	} else if head.stream == -1 {
 		// TODO: handle cassandra event frames, we shouldnt get any currently
