@@ -8,7 +8,7 @@ import (
 
 type ExecutableQuery interface {
 	execute(ctx context.Context, conn *Conn) *Iter
-	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo)
+	attempt(keyspace string, end, start time.Time, iter *Iter, host *HostInfo, shard int, token token)
 	retryPolicy() RetryPolicy
 	speculativeExecutionPolicy() SpeculativeExecutionPolicy
 	GetRoutingKey() ([]byte, error)
@@ -27,12 +27,12 @@ type queryExecutor struct {
 	policy HostSelectionPolicy
 }
 
-func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn) *Iter {
+func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn, selected SelectedHost) *Iter {
 	start := time.Now()
 	iter := qry.execute(ctx, conn)
 	end := time.Now()
 
-	qry.attempt(q.pool.keyspace, end, start, iter, conn.host)
+	qry.attempt(q.pool.keyspace, end, start, iter, conn.host, conn.scyllaSupported.shard, selected.Token())
 
 	return iter
 }
@@ -124,7 +124,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			continue
 		}
 
-		iter = q.attemptQuery(ctx, qry, conn)
+		iter = q.attemptQuery(ctx, qry, conn, selectedHost)
 		iter.host = selectedHost.Info()
 		// Update host
 		switch iter.err {
