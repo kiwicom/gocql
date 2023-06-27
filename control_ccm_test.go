@@ -32,12 +32,12 @@ func (f *TestHostFilter) SetAllowedHosts(hosts map[string]ccm.Host) {
 
 func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 	if err := ccm.AllUp(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("all up: %v", err)
 	}
 
 	allCcmHosts, err := ccm.Status()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("status: %v", err)
 	}
 
 	if len(allCcmHosts) < 2 {
@@ -87,7 +87,7 @@ func TestControlConn_ReconnectRefreshesRing(t *testing.T) {
 	}
 
 	if err := ccm.NodeDown(ccHostName); err != nil {
-		t.Fatal()
+		t.Fatalf("could not bring node %q down: %v", ccHostName, err)
 	}
 
 	defer func() {
