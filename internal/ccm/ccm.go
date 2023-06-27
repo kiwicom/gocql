@@ -6,7 +6,6 @@ package ccm
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -24,7 +23,7 @@ func execCmd(args ...string) (*bytes.Buffer, error) {
 	cmd.Stdout = stdout
 	cmd.Stderr = &bytes.Buffer{}
 	if err := cmd.Run(); err != nil {
-		return nil, errors.New(cmd.Stderr.(*bytes.Buffer).String())
+		return nil, fmt.Errorf("failed to exec %v %v: %v\n%s", execName, args, err, cmd.Stderr.(*bytes.Buffer).String())
 	}
 
 	return stdout, nil
