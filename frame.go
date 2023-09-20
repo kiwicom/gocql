@@ -764,11 +764,26 @@ func (f *framer) setLength(length int) {
 	f.buf[p+3] = byte(length)
 }
 
-func (f *framer) finish() error {
+type outFrameInfo struct {
+	// compressedSize of the frame payload (without header).
+	compressedSize int
+	// uncompressedSize of the frame payload (without header).
+	uncompressedSize int
+	// queryValuesSize is sum of sizes of query values.
+	queryValuesSize int
+	// queryCount is number of queries executed by the query/execute/batch frame.
+	queryCount int
+}
+
+func (f *framer) finish() (outFrameInfo, error) {
 	if len(f.buf) > maxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.buf = make([]byte, defaultBufSize)
-		return ErrFrameTooBig
+		return outFrameInfo{}, ErrFrameTooBig
+	}
+
+	info := outFrameInfo{
+		uncompressedSize: len(f.buf) - f.headSize,
 	}
 
 	if f.buf[1]&flagCompress == flagCompress {
@@ -779,15 +794,16 @@ func (f *framer) finish() error {
 		// TODO: only compress frames which are big enough
 		compressed, err := f.compres.Encode(f.buf[f.headSize:])
 		if err != nil {
-			return err
+			return info, err
 		}
 
 		f.buf = append(f.buf[:f.headSize], compressed...)
 	}
 	length := len(f.buf) - f.headSize
+	info.compressedSize = length
 	f.setLength(length)
 
-	return nil
+	return info, nil
 }
 
 func (f *framer) writeTo(w io.Writer) error {
@@ -833,7 +849,7 @@ func (w writeStartupFrame) String() string {
 	return fmt.Sprintf("[startup opts=%+v]", w.opts)
 }
 
-func (w *writeStartupFrame) buildFrame(f *framer, streamID int) error {
+func (w *writeStartupFrame) buildFrame(f *framer, streamID int) (outFrameInfo, error) {
 	f.writeHeader(f.flags&^flagCompress, opStartup, streamID)
 	f.writeStringMap(w.opts)
 
@@ -846,7 +862,7 @@ type writePrepareFrame struct {
 	customPayload map[string][]byte
 }
 
-func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
+func (w *writePrepareFrame) buildFrame(f *framer, streamID int) (outFrameInfo, error) {
 	if len(w.customPayload) > 0 {
 		f.payload()
 	}
@@ -1436,11 +1452,11 @@ func (a *writeAuthResponseFrame) String() string {
 	return fmt.Sprintf("[auth_response data=%q]", a.data)
 }
 
-func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) error {
+func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeAuthResponseFrame(streamID, a.data)
 }
 
-func (f *framer) writeAuthResponseFrame(streamID int, data []byte) error {
+func (f *framer) writeAuthResponseFrame(streamID int, data []byte) (outFrameInfo, error) {
 	f.writeHeader(f.flags, opAuthResponse, streamID)
 	f.writeBytes(data)
 	return f.finish()
@@ -1474,11 +1490,13 @@ func (q queryParams) String() string {
 		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace)
 }
 
-func (f *framer) writeQueryParams(opts *queryParams) {
+// writeQueryParams writes the queryParameters to the buffer.
+// It returns the total size of the values.
+func (f *framer) writeQueryParams(opts *queryParams) int {
 	f.writeConsistency(opts.consistency)
 
 	if f.proto == protoVersion1 {
-		return
+		return 0
 	}
 
 	var flags byte
@@ -1526,6 +1544,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		f.writeByte(flags)
 	}
 
+	startIdx := len(f.buf)
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
 
@@ -1540,6 +1559,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 			}
 		}
 	}
+	valuesSize := len(f.buf) - startIdx
 
 	if opts.pageSize > 0 {
 		f.writeInt(int32(opts.pageSize))
@@ -1567,6 +1587,8 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	if opts.keyspace != "" {
 		f.writeString(opts.keyspace)
 	}
+
+	return valuesSize
 }
 
 type writeQueryFrame struct {
@@ -1581,29 +1603,32 @@ func (w *writeQueryFrame) String() string {
 	return fmt.Sprintf("[query statement=%q params=%v]", w.statement, w.params)
 }
 
-func (w *writeQueryFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeQueryFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeQueryFrame(streamID, w.statement, &w.params, w.customPayload)
 }
 
-func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams, customPayload map[string][]byte) error {
+func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams, customPayload map[string][]byte) (outFrameInfo, error) {
 	if len(customPayload) > 0 {
 		f.payload()
 	}
 	f.writeHeader(f.flags, opQuery, streamID)
 	f.writeCustomPayload(&customPayload)
 	f.writeLongString(statement)
-	f.writeQueryParams(params)
+	valuesSize := f.writeQueryParams(params)
 
-	return f.finish()
+	ofi, err := f.finish()
+	ofi.queryValuesSize = valuesSize
+	ofi.queryCount = 1
+	return ofi, err
 }
 
 type frameBuilder interface {
-	buildFrame(framer *framer, streamID int) error
+	buildFrame(framer *framer, streamID int) (outFrameInfo, error)
 }
 
-type frameWriterFunc func(framer *framer, streamID int) error
+type frameWriterFunc func(framer *framer, streamID int) (outFrameInfo, error)
 
-func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
+func (f frameWriterFunc) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return f(framer, streamID)
 }
 
@@ -1619,20 +1644,22 @@ func (e *writeExecuteFrame) String() string {
 	return fmt.Sprintf("[execute id=% X params=%v]", e.preparedID, &e.params)
 }
 
-func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
+func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) (outFrameInfo, error) {
 	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params, &e.customPayload)
 }
 
-func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) error {
+func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) (outFrameInfo, error) {
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
 	f.writeHeader(f.flags, opExecute, streamID)
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
+	var valuesSize int
 	if f.proto > protoVersion1 {
-		f.writeQueryParams(params)
+		valuesSize = f.writeQueryParams(params)
 	} else {
+		startIdx := len(f.buf)
 		n := len(params.values)
 		f.writeShort(uint16(n))
 		for i := 0; i < n; i++ {
@@ -1642,10 +1669,14 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *quer
 				f.writeBytes(params.values[i].value)
 			}
 		}
+		valuesSize = len(f.buf) - startIdx
 		f.writeConsistency(params.consistency)
 	}
 
-	return f.finish()
+	ofi, err := f.finish()
+	ofi.queryValuesSize = valuesSize
+	ofi.queryCount = 1
+	return ofi, err
 }
 
 // TODO: can we replace BatchStatemt with batchStatement? As they prety much
@@ -1670,11 +1701,11 @@ type writeBatchFrame struct {
 	customPayload map[string][]byte
 }
 
-func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeBatchFrame(streamID, w, w.customPayload)
 }
 
-func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload map[string][]byte) error {
+func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload map[string][]byte) (outFrameInfo, error) {
 	if len(customPayload) > 0 {
 		f.payload()
 	}
@@ -1687,6 +1718,8 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 
 	var flags byte
 
+	var queryParamsSize int
+
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
 		if len(b.preparedID) == 0 {
@@ -1697,6 +1730,8 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 			f.writeShortBytes(b.preparedID)
 		}
 
+		startIdx := len(f.buf)
+
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
 			col := b.values[j]
@@ -1704,7 +1739,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 				// TODO: move this check into the caller and set a flag on writeBatchFrame
 				// to indicate using named values
 				if f.proto <= protoVersion5 {
-					return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+					return outFrameInfo{}, fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
 				}
 				flags |= flagWithNameValues
 				f.writeString(col.name)
@@ -1715,6 +1750,8 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 				f.writeBytes(col.value)
 			}
 		}
+
+		queryParamsSize += len(f.buf) - startIdx
 	}
 
 	f.writeConsistency(w.consistency)
@@ -1748,16 +1785,19 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		}
 	}
 
-	return f.finish()
+	ofi, err := f.finish()
+	ofi.queryValuesSize = queryParamsSize
+	ofi.queryCount = n
+	return ofi, err
 }
 
 type writeOptionsFrame struct{}
 
-func (w *writeOptionsFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeOptionsFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeOptionsFrame(streamID, w)
 }
 
-func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) error {
+func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) (outFrameInfo, error) {
 	f.writeHeader(f.flags&^flagCompress, opOptions, stream)
 	return f.finish()
 }
@@ -1766,11 +1806,11 @@ type writeRegisterFrame struct {
 	events []string
 }
 
-func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeRegisterFrame(streamID, w)
 }
 
-func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
+func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) (outFrameInfo, error) {
 	f.writeHeader(f.flags, opRegister, streamID)
 	f.writeStringList(w.events)
 

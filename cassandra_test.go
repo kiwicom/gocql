@@ -2179,7 +2179,7 @@ func TestNegativeStream(t *testing.T) {
 	conn := getRandomConn(t, session)
 
 	const stream = -50
-	writer := frameWriterFunc(func(f *framer, streamID int) error {
+	writer := frameWriterFunc(func(f *framer, streamID int) (outFrameInfo, error) {
 		f.writeHeader(0, opOptions, stream)
 		return f.finish()
 	})

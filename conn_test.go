@@ -679,7 +679,7 @@ func TestStream0(t *testing.T) {
 	f.writeHeader(0, opResult, 0)
 	f.writeInt(resultKindVoid)
 	f.buf[0] |= 0x80
-	if err := f.finish(); err != nil {
+	if _, err := f.finish(); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.writeTo(&buf); err != nil {
@@ -1285,7 +1285,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 
 	respFrame.buf[0] = srv.protocol | 0x80
 
-	if err := respFrame.finish(); err != nil {
+	if _, err := respFrame.finish(); err != nil {
 		srv.errorLocked(err)
 	}
 

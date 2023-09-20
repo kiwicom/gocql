@@ -1099,13 +1099,19 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		framer.trace()
 	}
 
+	ofi, err := req.buildFrame(framer, stream)
+	// The error is handled after we call the stream observer.
+
 	if call.streamObserverContext != nil {
 		call.streamObserverContext.StreamStarted(ObservedStream{
-			Host: c.host,
+			Host:                         c.host,
+			FramePayloadUncompressedSize: ofi.uncompressedSize,
+			FramePayloadCompressedSize:   ofi.compressedSize,
+			QueryValuesSize:              ofi.queryValuesSize,
+			QueryCount:                   ofi.queryCount,
 		})
 	}
 
-	err := req.buildFrame(framer, stream)
 	if err != nil {
 		// closeWithError will block waiting for this stream to either receive a response
 		// or for us to timeout.
@@ -1217,6 +1223,20 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 type ObservedStream struct {
 	// Host of the connection used to send the stream.
 	Host *HostInfo
+	// FramePayloadUncompressedSize is the uncompressed size of the frame payload (without frame header).
+	// This field is only available in StreamStarted.
+	FramePayloadUncompressedSize int
+	// FramePayloadCompressedSize is the compressed size of the frame payload (without frame header).
+	// This field is only available in StreamStarted.
+	FramePayloadCompressedSize int
+	// QueryValuesSize is the total uncompressed size of query values in the frame (without other query options).
+	// For a batch, it is the sum for all queries in the batch.
+	// For frames that contain no query values QueryValuesSize is zero.
+	// This field is only available in StreamStarted.
+	QueryValuesSize int
+	// QueryCount is 1 for EXECUTE/QUERY and size of the batch for BATCH frames.
+	// This field is only available in StreamStarted.
+	QueryCount int
 }
 
 // StreamObserver is notified about request/response pairs.
