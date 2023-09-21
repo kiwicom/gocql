@@ -235,6 +235,10 @@ type ClusterConfig struct {
 	// Use it to collect metrics / stats from frames by providing an implementation of FrameHeaderObserver.
 	FrameHeaderObserver FrameHeaderObserver
 
+	// FrameObserver will be notified of all received frames that were read.
+	// FrameObserver will not see frames that were discarded.
+	FrameObserver FrameObserver
+
 	// StreamObserver will be notified of stream state changes.
 	// This can be used to track in-flight protocol requests and responses.
 	StreamObserver StreamObserver

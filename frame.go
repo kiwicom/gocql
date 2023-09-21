@@ -344,6 +344,31 @@ type FrameHeaderObserver interface {
 	ObserveFrameHeader(context.Context, ObservedFrameHeader)
 }
 
+// ObservedFrame describes a frame that was read (not discarded).
+type ObservedFrame struct {
+	ObservedFrameHeader
+
+	// UncompressedSize is a size of the frame payload after decompression.
+	// See ObservedFrameHeader.Length to get the compressed size.
+	// UncompressedSize is zero if the frame was not compressed.
+	UncompressedSize int
+
+	// RowCount is count of result rows.
+	// Only set for RESULT frame with Rows kind.
+	RowCount int
+
+	// RowsSize is sum of sizes of all rows in the result.
+	// Only set for RESULT frame with Rows kind.
+	RowsSize int
+}
+
+// FrameObserver allows observing received frames.
+//
+// Experimental, this interface and use may change.
+type FrameObserver interface {
+	ObserveFrame(context.Context, ObservedFrame)
+}
+
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
 	proto byte
@@ -353,6 +378,12 @@ type framer struct {
 	headSize int
 	// if this frame was read then the header will be here
 	header *frameHeader
+	// ucompressedSize is size of the frame payload after decompression.
+	// It is zero if the frame was not compressed.
+	// It will be set if this frame was read.
+	uncompressedSize int
+
+	observer frameParseObserver
 
 	// if tracing flag is set this is not nil
 	traceID []byte
@@ -367,6 +398,26 @@ type framer struct {
 
 	flagLWT               int
 	rateLimitingErrorCode int
+}
+
+type frameParseObserver struct {
+	head          ObservedFrameHeader
+	frameObserver FrameObserver
+}
+
+func (fpo *frameParseObserver) observeFrame(ff *framer, f frame) {
+	if fpo.frameObserver == nil {
+		return
+	}
+	of := ObservedFrame{
+		ObservedFrameHeader: fpo.head,
+		UncompressedSize:    ff.uncompressedSize,
+	}
+	if rows, ok := f.(resultRowsFrame); ok {
+		of.RowCount = rows.numRows
+		of.RowsSize = rows.rowsContentSize
+	}
+	fpo.frameObserver.ObserveFrame(context.TODO(), of)
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -527,6 +578,8 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 		if err != nil {
 			return err
 		}
+
+		f.uncompressedSize = len(f.buf)
 	}
 
 	f.header = head
@@ -580,6 +633,8 @@ func (f *framer) parseFrame() (frame frame, err error) {
 	default:
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
+
+	f.observer.observeFrame(f, frame)
 
 	return
 }
@@ -1152,6 +1207,11 @@ type resultRowsFrame struct {
 	meta resultMetadata
 	// dont parse the rows here as we only need to do it once
 	numRows int
+	// rowsContentSize is size of the frame after row_count.
+	// It approximates the size of rows_content:
+	// Currently it measures rows_content,
+	// but theoretically more fields could be added after rows_content in the future.
+	rowsContentSize int
 }
 
 func (f *resultRowsFrame) String() string {
@@ -1166,6 +1226,7 @@ func (f *framer) parseResultRows() frame {
 	if result.numRows < 0 {
 		panic(fmt.Errorf("invalid row_count in result frame: %d", result.numRows))
 	}
+	result.rowsContentSize = len(f.buf)
 
 	return result
 }

@@ -170,11 +170,12 @@ type Conn struct {
 	r    *bufio.Reader
 	w    contextWriter
 
-	timeout        time.Duration
-	writeTimeout   time.Duration
-	cfg            *ConnConfig
-	frameObserver  FrameHeaderObserver
-	streamObserver StreamObserver
+	timeout             time.Duration
+	writeTimeout        time.Duration
+	cfg                 *ConnConfig
+	frameHeaderObserver FrameHeaderObserver
+	frameObserver       FrameObserver
+	streamObserver      StreamObserver
 
 	headerBuf [maxFrameHeaderSize]byte
 
@@ -279,19 +280,20 @@ func (s *Session) dialWithoutObserver(ctx context.Context, host *HostInfo, cfg *
 
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Conn{
-		conn:          dialedHost.Conn,
-		r:             bufio.NewReader(dialedHost.Conn),
-		cfg:           cfg,
-		calls:         make(map[int]*callReq),
-		version:       uint8(cfg.ProtoVersion),
-		addr:          dialedHost.Conn.RemoteAddr().String(),
-		errorHandler:  errorHandler,
-		compressor:    cfg.Compressor,
-		session:       s,
-		streams:       s.streamIDGenerator(cfg.ProtoVersion),
-		host:          host,
-		isSchemaV2:    true, // Try using "system.peers_v2" until proven otherwise
-		frameObserver: s.frameObserver,
+		conn:                dialedHost.Conn,
+		r:                   bufio.NewReader(dialedHost.Conn),
+		cfg:                 cfg,
+		calls:               make(map[int]*callReq),
+		version:             uint8(cfg.ProtoVersion),
+		addr:                dialedHost.Conn.RemoteAddr().String(),
+		errorHandler:        errorHandler,
+		compressor:          cfg.Compressor,
+		session:             s,
+		streams:             s.streamIDGenerator(cfg.ProtoVersion),
+		host:                host,
+		isSchemaV2:          true, // Try using "system.peers_v2" until proven otherwise
+		frameHeaderObserver: s.frameHeaderObserver,
+		frameObserver:       s.frameObserver,
 		w: &deadlineContextWriter{
 			w:         dialedHost.Conn,
 			timeout:   writeTimeout,
@@ -713,8 +715,9 @@ func (c *Conn) recv(ctx context.Context) error {
 		return err
 	}
 
-	if c.frameObserver != nil {
-		c.frameObserver.ObserveFrameHeader(context.Background(), ObservedFrameHeader{
+	var parseObserver frameParseObserver
+	if c.frameHeaderObserver != nil || c.frameObserver != nil {
+		observedHeader := ObservedFrameHeader{
 			Version: protoVersion(head.version),
 			Flags:   head.flags,
 			Stream:  int16(head.stream),
@@ -723,7 +726,18 @@ func (c *Conn) recv(ctx context.Context) error {
 			Start:   headStartTime,
 			End:     headEndTime,
 			Host:    c.host,
-		})
+		}
+
+		if c.frameHeaderObserver != nil {
+			c.frameHeaderObserver.ObserveFrameHeader(context.Background(), observedHeader)
+		}
+
+		if c.frameObserver != nil {
+			parseObserver = frameParseObserver{
+				head:          observedHeader,
+				frameObserver: c.frameObserver,
+			}
+		}
 	}
 
 	if head.stream > c.streams.NumStreams {
@@ -734,6 +748,9 @@ func (c *Conn) recv(ctx context.Context) error {
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
 		}
+		if c.frameObserver != nil {
+			framer.observer = parseObserver
+		}
 		go c.session.handleEvent(framer)
 		return nil
 	} else if head.stream <= 0 {
@@ -742,6 +759,9 @@ func (c *Conn) recv(ctx context.Context) error {
 		framer := newFramerWithExts(c.compressor, c.version, c.cqlProtoExts, c.logger)
 		if err := framer.readFrame(c, &head); err != nil {
 			return err
+		}
+		if c.frameObserver != nil {
+			framer.observer = parseObserver
 		}
 
 		frame, err := framer.parseFrame()
@@ -778,6 +798,9 @@ func (c *Conn) recv(ctx context.Context) error {
 		if _, ok := err.(net.Error); ok {
 			return err
 		}
+	}
+	if c.frameObserver != nil {
+		framer.observer = parseObserver
 	}
 
 	// we either, return a response to the caller, the caller timedout, or the
