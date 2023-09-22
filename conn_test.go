@@ -676,7 +676,7 @@ func TestStream0(t *testing.T) {
 
 	var buf bytes.Buffer
 	f := newFramer(nil, protoVersion4)
-	f.writeHeader(0, opResult, 0)
+	f.writeHeader(0, FrameOpcodeResult, 0)
 	f.writeInt(resultKindVoid)
 	f.buf[0] |= 0x80
 	if _, err := f.finish(); err != nil {
@@ -734,7 +734,7 @@ func TestContext_CanceledBeforeExec(t *testing.T) {
 		addr:     "127.0.0.1:0",
 		protocol: defaultProto,
 		recvHook: func(f *framer) {
-			if f.header.op == opStartup || f.header.op == opOptions {
+			if f.header.op == FrameOpcodeStartup || f.header.op == FrameOpcodeOptions {
 				// ignore statup and heartbeat messages
 				return
 			}
@@ -966,7 +966,7 @@ func TestFrameHeaderObserver(t *testing.T) {
 	}
 
 	frames := observer.getFrames()
-	expFrames := []frameOp{opSupported, opReady, opResult}
+	expFrames := []FrameOpcode{FrameOpcodeSupported, FrameOpcodeReady, FrameOpcodeResult}
 	if len(frames) != len(expFrames) {
 		t.Fatalf("Expected to receive %d frames, instead received %d", len(expFrames), len(frames))
 	}
@@ -1209,7 +1209,7 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 	respFrame := newFramer(nil, reqFrame.proto)
 
 	switch head.op {
-	case opStartup:
+	case FrameOpcodeStartup:
 		if atomic.LoadInt32(&srv.TimeoutOnStartup) > 0 {
 			// Do not respond to startup command
 			// wait until we get a cancel signal
@@ -1218,11 +1218,11 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 				return
 			}
 		}
-		respFrame.writeHeader(0, opReady, head.stream)
-	case opOptions:
-		respFrame.writeHeader(0, opSupported, head.stream)
+		respFrame.writeHeader(0, FrameOpcodeReady, head.stream)
+	case FrameOpcodeOptions:
+		respFrame.writeHeader(0, FrameOpcodeSupported, head.stream)
 		respFrame.writeStringMultiMap(exts)
-	case opQuery:
+	case FrameOpcodeQuery:
 		query := reqFrame.readLongString()
 		first := query
 		if n := strings.Index(query, " "); n > 0 {
@@ -1231,21 +1231,21 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		switch strings.ToLower(first) {
 		case "kill":
 			atomic.AddInt64(&srv.nKillReq, 1)
-			respFrame.writeHeader(0, opError, head.stream)
+			respFrame.writeHeader(0, FrameOpcodeError, head.stream)
 			respFrame.writeInt(0x1001)
 			respFrame.writeString("query killed")
 		case "use":
 			respFrame.writeInt(resultKindKeyspace)
 			respFrame.writeString(strings.TrimSpace(query[3:]))
 		case "void":
-			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeHeader(0, FrameOpcodeResult, head.stream)
 			respFrame.writeInt(resultKindVoid)
 		case "timeout":
 			<-srv.ctx.Done()
 			return
 		case "slow":
 			go func() {
-				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeHeader(0, FrameOpcodeResult, head.stream)
 				respFrame.writeInt(resultKindVoid)
 				respFrame.buf[0] = srv.protocol | 0x80
 				select {
@@ -1260,25 +1260,25 @@ func (srv *TestServer) process(conn net.Conn, reqFrame *framer, exts map[string]
 		case "speculative":
 			atomic.AddInt64(&srv.nKillReq, 1)
 			if atomic.LoadInt64(&srv.nKillReq) > 3 {
-				respFrame.writeHeader(0, opResult, head.stream)
+				respFrame.writeHeader(0, FrameOpcodeResult, head.stream)
 				respFrame.writeInt(resultKindVoid)
 				respFrame.writeString("speculative query success on the node " + srv.Address)
 			} else {
-				respFrame.writeHeader(0, opError, head.stream)
+				respFrame.writeHeader(0, FrameOpcodeError, head.stream)
 				respFrame.writeInt(0x1001)
 				respFrame.writeString("speculative error")
 				rand.Seed(time.Now().UnixNano())
 				<-time.After(time.Millisecond * 120)
 			}
 		default:
-			respFrame.writeHeader(0, opResult, head.stream)
+			respFrame.writeHeader(0, FrameOpcodeResult, head.stream)
 			respFrame.writeInt(resultKindVoid)
 		}
-	case opError:
-		respFrame.writeHeader(0, opError, head.stream)
+	case FrameOpcodeError:
+		respFrame.writeHeader(0, FrameOpcodeError, head.stream)
 		respFrame.buf = append(respFrame.buf, reqFrame.buf...)
 	default:
-		respFrame.writeHeader(0, opError, head.stream)
+		respFrame.writeHeader(0, FrameOpcodeError, head.stream)
 		respFrame.writeInt(0)
 		respFrame.writeString("not supported")
 	}

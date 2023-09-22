@@ -64,7 +64,7 @@ func TestFrameWriteTooLong(t *testing.T) {
 
 	framer := newFramer(nil, 2)
 
-	framer.writeHeader(0, opStartup, 1)
+	framer.writeHeader(0, FrameOpcodeStartup, 1)
 	framer.writeBytes(make([]byte, maxFrameSize+1))
 	_, err := framer.finish()
 	if err != ErrFrameTooBig {
@@ -80,13 +80,13 @@ func TestFrameReadTooLong(t *testing.T) {
 	r := &bytes.Buffer{}
 	r.Write(make([]byte, maxFrameSize+1))
 	// write a new header right after this frame to verify that we can read it
-	r.Write([]byte{0x02, 0x00, 0x00, byte(opReady), 0x00, 0x00, 0x00, 0x00})
+	r.Write([]byte{0x02, 0x00, 0x00, byte(FrameOpcodeReady), 0x00, 0x00, 0x00, 0x00})
 
 	framer := newFramer(nil, 2)
 
 	head := frameHeader{
 		version: 2,
-		op:      opReady,
+		op:      FrameOpcodeReady,
 		length:  r.Len() - 8,
 	}
 
@@ -99,8 +99,8 @@ func TestFrameReadTooLong(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head.op != opReady {
-		t.Fatalf("expected to get header %v got %v", opReady, head.op)
+	if head.op != FrameOpcodeReady {
+		t.Fatalf("expected to get header %v got %v", FrameOpcodeReady, head.op)
 	}
 }
 
@@ -135,7 +135,7 @@ func TestOutFrameInfo(t *testing.T) {
 			},
 			compress: true,
 			expectedInfo: outFrameInfo{
-				op:               opQuery,
+				op:               FrameOpcodeQuery,
 				uncompressedSize: 81,
 				compressedSize:   72,
 				queryValuesSize:  30,
@@ -159,7 +159,7 @@ func TestOutFrameInfo(t *testing.T) {
 			},
 			compress: true,
 			expectedInfo: outFrameInfo{
-				op:               opExecute,
+				op:               FrameOpcodeExecute,
 				compressedSize:   50,
 				uncompressedSize: 51,
 				queryValuesSize:  30,
@@ -203,7 +203,7 @@ func TestOutFrameInfo(t *testing.T) {
 			},
 			compress: true,
 			expectedInfo: outFrameInfo{
-				op:               opBatch,
+				op:               FrameOpcodeBatch,
 				compressedSize:   96,
 				uncompressedSize: 130,
 				queryValuesSize:  60,
@@ -214,7 +214,7 @@ func TestOutFrameInfo(t *testing.T) {
 			frame:    &writeOptionsFrame{},
 			compress: true,
 			expectedInfo: outFrameInfo{
-				op:               opOptions,
+				op:               FrameOpcodeOptions,
 				compressedSize:   0,
 				uncompressedSize: 0,
 				queryValuesSize:  0,
@@ -227,7 +227,7 @@ func TestOutFrameInfo(t *testing.T) {
 			},
 			compress: true,
 			expectedInfo: outFrameInfo{
-				op:               opRegister,
+				op:               FrameOpcodeRegister,
 				compressedSize:   20,
 				uncompressedSize: 18,
 				queryValuesSize:  0,
@@ -240,7 +240,7 @@ func TestOutFrameInfo(t *testing.T) {
 			},
 			compress: false,
 			expectedInfo: outFrameInfo{
-				op:               opRegister,
+				op:               FrameOpcodeRegister,
 				compressedSize:   0,
 				uncompressedSize: 18,
 				queryValuesSize:  0,

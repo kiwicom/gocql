@@ -2180,7 +2180,7 @@ func TestNegativeStream(t *testing.T) {
 
 	const stream = -50
 	writer := frameWriterFunc(func(f *framer, streamID int) (outFrameInfo, error) {
-		f.writeHeader(0, opOptions, stream)
+		f.writeHeader(0, FrameOpcodeOptions, stream)
 		return f.finish()
 	})
 

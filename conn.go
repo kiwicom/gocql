@@ -721,7 +721,7 @@ func (c *Conn) recv(ctx context.Context) error {
 			Version: protoVersion(head.version),
 			Flags:   head.flags,
 			Stream:  int16(head.stream),
-			Opcode:  frameOp(head.op),
+			Opcode:  FrameOpcode(head.op),
 			Length:  int32(head.length),
 			Start:   headStartTime,
 			End:     headEndTime,
@@ -1248,7 +1248,7 @@ type ObservedStream struct {
 	// Host of the connection used to send the stream.
 	Host *HostInfo
 	// FrameOpcode is the frame operation (type) that was used.
-	FrameOpcode frameOp
+	FrameOpcode FrameOpcode
 	// FramePayloadUncompressedSize is the uncompressed size of the frame payload (without frame header).
 	// This field is only available in StreamStarted.
 	FramePayloadUncompressedSize int

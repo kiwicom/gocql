@@ -75,61 +75,63 @@ func (p protoVersion) String() string {
 	return fmt.Sprintf("[version=%d direction=%s]", p.version(), dir)
 }
 
-type frameOp byte
+// FrameOpcode enumerates frame operation codes from the CQL protocol.
+// See https://martin-sucha.github.io/cqlprotodoc/native_protocol_v4.html#s2.4
+type FrameOpcode byte
 
 const (
 	// header ops
-	opError         frameOp = 0x00
-	opStartup       frameOp = 0x01
-	opReady         frameOp = 0x02
-	opAuthenticate  frameOp = 0x03
-	opOptions       frameOp = 0x05
-	opSupported     frameOp = 0x06
-	opQuery         frameOp = 0x07
-	opResult        frameOp = 0x08
-	opPrepare       frameOp = 0x09
-	opExecute       frameOp = 0x0A
-	opRegister      frameOp = 0x0B
-	opEvent         frameOp = 0x0C
-	opBatch         frameOp = 0x0D
-	opAuthChallenge frameOp = 0x0E
-	opAuthResponse  frameOp = 0x0F
-	opAuthSuccess   frameOp = 0x10
+	FrameOpcodeError         FrameOpcode = 0x00
+	FrameOpcodeStartup       FrameOpcode = 0x01
+	FrameOpcodeReady         FrameOpcode = 0x02
+	FrameOpcodeAuthenticate  FrameOpcode = 0x03
+	FrameOpcodeOptions       FrameOpcode = 0x05
+	FrameOpcodeSupported     FrameOpcode = 0x06
+	FrameOpcodeQuery         FrameOpcode = 0x07
+	FrameOpcodeResult        FrameOpcode = 0x08
+	FrameOpcodePrepare       FrameOpcode = 0x09
+	FrameOpcodeExecute       FrameOpcode = 0x0A
+	FrameOpcodeRegister      FrameOpcode = 0x0B
+	FrameOpcodeEvent         FrameOpcode = 0x0C
+	FrameOpcodeBatch         FrameOpcode = 0x0D
+	FrameOpcodeAuthChallenge FrameOpcode = 0x0E
+	FrameOpcodeAuthResponse  FrameOpcode = 0x0F
+	FrameOpcodeAuthSuccess   FrameOpcode = 0x10
 )
 
-func (f frameOp) String() string {
+func (f FrameOpcode) String() string {
 	switch f {
-	case opError:
+	case FrameOpcodeError:
 		return "ERROR"
-	case opStartup:
+	case FrameOpcodeStartup:
 		return "STARTUP"
-	case opReady:
+	case FrameOpcodeReady:
 		return "READY"
-	case opAuthenticate:
+	case FrameOpcodeAuthenticate:
 		return "AUTHENTICATE"
-	case opOptions:
+	case FrameOpcodeOptions:
 		return "OPTIONS"
-	case opSupported:
+	case FrameOpcodeSupported:
 		return "SUPPORTED"
-	case opQuery:
+	case FrameOpcodeQuery:
 		return "QUERY"
-	case opResult:
+	case FrameOpcodeResult:
 		return "RESULT"
-	case opPrepare:
+	case FrameOpcodePrepare:
 		return "PREPARE"
-	case opExecute:
+	case FrameOpcodeExecute:
 		return "EXECUTE"
-	case opRegister:
+	case FrameOpcodeRegister:
 		return "REGISTER"
-	case opEvent:
+	case FrameOpcodeEvent:
 		return "EVENT"
-	case opBatch:
+	case FrameOpcodeBatch:
 		return "BATCH"
-	case opAuthChallenge:
+	case FrameOpcodeAuthChallenge:
 		return "AUTH_CHALLENGE"
-	case opAuthResponse:
+	case FrameOpcodeAuthResponse:
 		return "AUTH_RESPONSE"
-	case opAuthSuccess:
+	case FrameOpcodeAuthSuccess:
 		return "AUTH_SUCCESS"
 	default:
 		return fmt.Sprintf("UNKNOWN_OP_%d", f)
@@ -301,7 +303,7 @@ type frameHeader struct {
 	version  protoVersion
 	flags    byte
 	stream   int
-	op       frameOp
+	op       FrameOpcode
 	length   int
 	warnings []string
 }
@@ -320,7 +322,7 @@ type ObservedFrameHeader struct {
 	Version protoVersion
 	Flags   byte
 	Stream  int16
-	Opcode  frameOp
+	Opcode  FrameOpcode
 	Length  int32
 
 	// StartHeader is the time we started reading the frame header off the network connection.
@@ -380,7 +382,7 @@ type framer struct {
 	compres  Compressor
 	headSize int
 	// if writeHeader was called, outFrameOp will contain the frame operation.
-	outFrameOp frameOp
+	outFrameOp FrameOpcode
 	// if this frame was read then the header will be here
 	header *frameHeader
 	// ucompressedSize is size of the frame payload after decompression.
@@ -524,7 +526,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		}
 
 		head.stream = int(int16(p[2])<<8 | int16(p[3]))
-		head.op = frameOp(p[4])
+		head.op = FrameOpcode(p[4])
 		head.length = int(readInt(p[5:]))
 	} else {
 		if len(p) != 8 {
@@ -532,7 +534,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		}
 
 		head.stream = int(int8(p[2]))
-		head.op = frameOp(p[3])
+		head.op = FrameOpcode(p[3])
 		head.length = int(readInt(p[4:]))
 	}
 
@@ -620,21 +622,21 @@ func (f *framer) parseFrame() (frame frame, err error) {
 
 	// assumes that the frame body has been read into rbuf
 	switch f.header.op {
-	case opError:
+	case FrameOpcodeError:
 		frame = f.parseErrorFrame()
-	case opReady:
+	case FrameOpcodeReady:
 		frame = f.parseReadyFrame()
-	case opResult:
+	case FrameOpcodeResult:
 		frame, err = f.parseResultFrame()
-	case opSupported:
+	case FrameOpcodeSupported:
 		frame = f.parseSupportedFrame()
-	case opAuthenticate:
+	case FrameOpcodeAuthenticate:
 		frame = f.parseAuthenticateFrame()
-	case opAuthChallenge:
+	case FrameOpcodeAuthChallenge:
 		frame = f.parseAuthChallengeFrame()
-	case opAuthSuccess:
+	case FrameOpcodeAuthSuccess:
 		frame = f.parseAuthSuccessFrame()
-	case opEvent:
+	case FrameOpcodeEvent:
 		frame = f.parseEventFrame()
 	default:
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
@@ -785,7 +787,7 @@ func (f *framer) readErrorMap() (errMap ErrorMap) {
 	return
 }
 
-func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
+func (f *framer) writeHeader(flags byte, op FrameOpcode, stream int) {
 	f.outFrameOp = op
 
 	f.buf = f.buf[:0]
@@ -829,7 +831,7 @@ func (f *framer) setLength(length int) {
 
 type outFrameInfo struct {
 	// op is the type of the frame.
-	op frameOp
+	op FrameOpcode
 	// compressedSize of the frame payload (without header).
 	compressedSize int
 	// uncompressedSize of the frame payload (without header).
@@ -916,7 +918,7 @@ func (w writeStartupFrame) String() string {
 }
 
 func (w *writeStartupFrame) buildFrame(f *framer, streamID int) (outFrameInfo, error) {
-	f.writeHeader(f.flags&^flagCompress, opStartup, streamID)
+	f.writeHeader(f.flags&^flagCompress, FrameOpcodeStartup, streamID)
 	f.writeStringMap(w.opts)
 
 	return f.finish()
@@ -932,7 +934,7 @@ func (w *writePrepareFrame) buildFrame(f *framer, streamID int) (outFrameInfo, e
 	if len(w.customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opPrepare, streamID)
+	f.writeHeader(f.flags, FrameOpcodePrepare, streamID)
 	f.writeCustomPayload(&w.customPayload)
 	f.writeLongString(w.statement)
 
@@ -1529,7 +1531,7 @@ func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) (outFr
 }
 
 func (f *framer) writeAuthResponseFrame(streamID int, data []byte) (outFrameInfo, error) {
-	f.writeHeader(f.flags, opAuthResponse, streamID)
+	f.writeHeader(f.flags, FrameOpcodeAuthResponse, streamID)
 	f.writeBytes(data)
 	return f.finish()
 }
@@ -1683,7 +1685,7 @@ func (f *framer) writeQueryFrame(streamID int, statement string, params *queryPa
 	if len(customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opQuery, streamID)
+	f.writeHeader(f.flags, FrameOpcodeQuery, streamID)
 	f.writeCustomPayload(&customPayload)
 	f.writeLongString(statement)
 	valuesSize := f.writeQueryParams(params)
@@ -1724,7 +1726,7 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *quer
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opExecute, streamID)
+	f.writeHeader(f.flags, FrameOpcodeExecute, streamID)
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
 	var valuesSize int
@@ -1781,7 +1783,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 	if len(customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opBatch, streamID)
+	f.writeHeader(f.flags, FrameOpcodeBatch, streamID)
 	f.writeCustomPayload(&customPayload)
 	f.writeByte(byte(w.typ))
 
@@ -1870,7 +1872,7 @@ func (w *writeOptionsFrame) buildFrame(framer *framer, streamID int) (outFrameIn
 }
 
 func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) (outFrameInfo, error) {
-	f.writeHeader(f.flags&^flagCompress, opOptions, stream)
+	f.writeHeader(f.flags&^flagCompress, FrameOpcodeOptions, stream)
 	return f.finish()
 }
 
@@ -1883,7 +1885,7 @@ func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) (outFrameI
 }
 
 func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) (outFrameInfo, error) {
-	f.writeHeader(f.flags, opRegister, streamID)
+	f.writeHeader(f.flags, FrameOpcodeRegister, streamID)
 	f.writeStringList(w.events)
 
 	return f.finish()
