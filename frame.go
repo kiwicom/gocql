@@ -420,7 +420,7 @@ func (fpo *frameParseObserver) observeFrame(ff *framer, f frame) {
 		ObservedFrameHeader: fpo.head,
 		UncompressedSize:    ff.uncompressedSize,
 	}
-	if rows, ok := f.(resultRowsFrame); ok {
+	if rows, ok := f.(*resultRowsFrame); ok {
 		of.IsRowsResult = true
 		of.RowCount = rows.numRows
 		of.RowsSize = rows.rowsContentSize
