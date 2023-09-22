@@ -353,12 +353,15 @@ type ObservedFrame struct {
 	// UncompressedSize is zero if the frame was not compressed.
 	UncompressedSize int
 
+	// IsRowsResult indicates that the frame was a RESULT op with ROWS kind.
+	IsRowsResult bool
+
 	// RowCount is count of result rows.
-	// Only set for RESULT frame with Rows kind.
+	// Only set if IsRowsResult is true.
 	RowCount int
 
 	// RowsSize is sum of sizes of all rows in the result.
-	// Only set for RESULT frame with Rows kind.
+	// Only set if IsRowsResult is true.
 	RowsSize int
 }
 
@@ -414,6 +417,7 @@ func (fpo *frameParseObserver) observeFrame(ff *framer, f frame) {
 		UncompressedSize:    ff.uncompressedSize,
 	}
 	if rows, ok := f.(resultRowsFrame); ok {
+		of.IsRowsResult = true
 		of.RowCount = rows.numRows
 		of.RowsSize = rows.rowsContentSize
 	}
