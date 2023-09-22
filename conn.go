@@ -1128,6 +1128,7 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 	if call.streamObserverContext != nil {
 		call.streamObserverContext.StreamStarted(ObservedStream{
 			Host:                         c.host,
+			FrameOpcode:                  ofi.op,
 			FramePayloadUncompressedSize: ofi.uncompressedSize,
 			FramePayloadCompressedSize:   ofi.compressedSize,
 			QueryValuesSize:              ofi.queryValuesSize,
@@ -1246,6 +1247,8 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 type ObservedStream struct {
 	// Host of the connection used to send the stream.
 	Host *HostInfo
+	// FrameOpcode is the frame operation (type) that was used.
+	FrameOpcode frameOp
 	// FramePayloadUncompressedSize is the uncompressed size of the frame payload (without frame header).
 	// This field is only available in StreamStarted.
 	FramePayloadUncompressedSize int

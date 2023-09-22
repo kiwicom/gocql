@@ -379,6 +379,8 @@ type framer struct {
 	flags    byte
 	compres  Compressor
 	headSize int
+	// if writeHeader was called, outFrameOp will contain the frame operation.
+	outFrameOp frameOp
 	// if this frame was read then the header will be here
 	header *frameHeader
 	// ucompressedSize is size of the frame payload after decompression.
@@ -784,6 +786,8 @@ func (f *framer) readErrorMap() (errMap ErrorMap) {
 }
 
 func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
+	f.outFrameOp = op
+
 	f.buf = f.buf[:0]
 	f.buf = append(f.buf,
 		f.proto,
@@ -824,6 +828,8 @@ func (f *framer) setLength(length int) {
 }
 
 type outFrameInfo struct {
+	// op is the type of the frame.
+	op frameOp
 	// compressedSize of the frame payload (without header).
 	compressedSize int
 	// uncompressedSize of the frame payload (without header).
@@ -842,6 +848,7 @@ func (f *framer) finish() (outFrameInfo, error) {
 	}
 
 	info := outFrameInfo{
+		op:               f.outFrameOp,
 		uncompressedSize: len(f.buf) - f.headSize,
 	}
 

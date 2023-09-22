@@ -133,6 +133,7 @@ func TestOutFrameInfo(t *testing.T) {
 				customPayload: nil,
 			},
 			expectedInfo: outFrameInfo{
+				op:               opQuery,
 				uncompressedSize: 81,
 				compressedSize:   72,
 				queryValuesSize:  30,
@@ -155,6 +156,7 @@ func TestOutFrameInfo(t *testing.T) {
 				customPayload: nil,
 			},
 			expectedInfo: outFrameInfo{
+				op:               opExecute,
 				compressedSize:   50,
 				uncompressedSize: 51,
 				queryValuesSize:  30,
@@ -197,6 +199,7 @@ func TestOutFrameInfo(t *testing.T) {
 				customPayload:         nil,
 			},
 			expectedInfo: outFrameInfo{
+				op:               opBatch,
 				compressedSize:   96,
 				uncompressedSize: 130,
 				queryValuesSize:  60,
@@ -206,6 +209,7 @@ func TestOutFrameInfo(t *testing.T) {
 		"options": {
 			frame: &writeOptionsFrame{},
 			expectedInfo: outFrameInfo{
+				op:               opOptions,
 				compressedSize:   0,
 				uncompressedSize: 0,
 				queryValuesSize:  0,
@@ -217,6 +221,7 @@ func TestOutFrameInfo(t *testing.T) {
 				events: []string{"event1", "event2"},
 			},
 			expectedInfo: outFrameInfo{
+				op:               opRegister,
 				compressedSize:   20,
 				uncompressedSize: 18,
 				queryValuesSize:  0,
@@ -230,6 +235,9 @@ func TestOutFrameInfo(t *testing.T) {
 			ofi, err := test.frame.buildFrame(fr, 42)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if ofi.op != test.expectedInfo.op {
+				t.Errorf("expected op %s, but got %s", test.expectedInfo.op.String(), ofi.op.String())
 			}
 			if ofi.queryCount != test.expectedInfo.queryCount {
 				t.Errorf("expected queryCount %d, but got %d", test.expectedInfo.queryCount, ofi.queryCount)
