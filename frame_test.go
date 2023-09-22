@@ -64,9 +64,9 @@ func TestFrameWriteTooLong(t *testing.T) {
 
 	framer := newFramer(nil, 2)
 
-	framer.writeHeader(0, opStartup, 1)
+	framer.writeHeader(0, FrameOpcodeStartup, 1)
 	framer.writeBytes(make([]byte, maxFrameSize+1))
-	err := framer.finish()
+	_, err := framer.finish()
 	if err != ErrFrameTooBig {
 		t.Fatalf("expected to get %v got %v", ErrFrameTooBig, err)
 	}
@@ -80,13 +80,13 @@ func TestFrameReadTooLong(t *testing.T) {
 	r := &bytes.Buffer{}
 	r.Write(make([]byte, maxFrameSize+1))
 	// write a new header right after this frame to verify that we can read it
-	r.Write([]byte{0x02, 0x00, 0x00, byte(opReady), 0x00, 0x00, 0x00, 0x00})
+	r.Write([]byte{0x02, 0x00, 0x00, byte(FrameOpcodeReady), 0x00, 0x00, 0x00, 0x00})
 
 	framer := newFramer(nil, 2)
 
 	head := frameHeader{
 		version: 2,
-		op:      opReady,
+		op:      FrameOpcodeReady,
 		length:  r.Len() - 8,
 	}
 
@@ -99,7 +99,181 @@ func TestFrameReadTooLong(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if head.op != opReady {
-		t.Fatalf("expected to get header %v got %v", opReady, head.op)
+	if head.op != FrameOpcodeReady {
+		t.Fatalf("expected to get header %v got %v", FrameOpcodeReady, head.op)
+	}
+}
+
+func TestOutFrameInfo(t *testing.T) {
+	tests := map[string]struct {
+		frame        frameBuilder
+		compress     bool
+		expectedInfo outFrameInfo
+	}{
+		"query": {
+			frame: &writeQueryFrame{
+				statement: "SELECT * FROM mytable WHERE id=? AND x=?",
+				params: queryParams{
+					consistency: One,
+					skipMeta:    false,
+					values: []queryValues{
+						{
+							value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+						},
+						{
+							value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+						},
+					},
+					pageSize:              5000,
+					pagingState:           nil,
+					serialConsistency:     0,
+					defaultTimestamp:      false,
+					defaultTimestampValue: 0,
+					keyspace:              "",
+				},
+				customPayload: nil,
+			},
+			compress: true,
+			expectedInfo: outFrameInfo{
+				op:               FrameOpcodeQuery,
+				uncompressedSize: 81,
+				compressedSize:   72,
+				queryValuesSize:  30,
+				queryCount:       1,
+			},
+		},
+		"execute": {
+			frame: &writeExecuteFrame{
+				preparedID: []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5},
+				params: queryParams{
+					values: []queryValues{
+						{
+							value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+						},
+						{
+							value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+						},
+					},
+				},
+				customPayload: nil,
+			},
+			compress: true,
+			expectedInfo: outFrameInfo{
+				op:               FrameOpcodeExecute,
+				compressedSize:   50,
+				uncompressedSize: 51,
+				queryValuesSize:  30,
+				queryCount:       1,
+			},
+		},
+		"batch": {
+			frame: &writeBatchFrame{
+				typ: UnloggedBatch,
+				statements: []batchStatment{
+					{
+						preparedID: nil,
+						statement:  "SELECT * FROM mytable WHERE id=? AND x=?",
+						values: []queryValues{
+							{
+								value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+							},
+							{
+								value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+							},
+						},
+					},
+					{
+						preparedID: []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5},
+						statement:  "",
+						values: []queryValues{
+							{
+								value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+							},
+							{
+								value: []byte{'H', 'e', 'l', 'l', 'o', 'W', 'o', 'r', 'l', 'd'},
+							},
+						},
+					},
+				},
+				consistency:           One,
+				serialConsistency:     0,
+				defaultTimestamp:      false,
+				defaultTimestampValue: 0,
+				customPayload:         nil,
+			},
+			compress: true,
+			expectedInfo: outFrameInfo{
+				op:               FrameOpcodeBatch,
+				compressedSize:   96,
+				uncompressedSize: 130,
+				queryValuesSize:  60,
+				queryCount:       2,
+			},
+		},
+		"options": {
+			frame:    &writeOptionsFrame{},
+			compress: true,
+			expectedInfo: outFrameInfo{
+				op:               FrameOpcodeOptions,
+				compressedSize:   0,
+				uncompressedSize: 0,
+				queryValuesSize:  0,
+				queryCount:       0,
+			},
+		},
+		"register": {
+			frame: &writeRegisterFrame{
+				events: []string{"event1", "event2"},
+			},
+			compress: true,
+			expectedInfo: outFrameInfo{
+				op:               FrameOpcodeRegister,
+				compressedSize:   20,
+				uncompressedSize: 18,
+				queryValuesSize:  0,
+				queryCount:       0,
+			},
+		},
+		"register uncompressed": {
+			frame: &writeRegisterFrame{
+				events: []string{"event1", "event2"},
+			},
+			compress: false,
+			expectedInfo: outFrameInfo{
+				op:               FrameOpcodeRegister,
+				compressedSize:   0,
+				uncompressedSize: 18,
+				queryValuesSize:  0,
+				queryCount:       0,
+			},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var compressor Compressor
+			if test.compress {
+				compressor = SnappyCompressor{}
+			}
+			fr := newFramer(compressor, 4)
+			ofi, err := test.frame.buildFrame(fr, 42)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ofi.op != test.expectedInfo.op {
+				t.Errorf("expected op %s, but got %s", test.expectedInfo.op.String(), ofi.op.String())
+			}
+			if ofi.queryCount != test.expectedInfo.queryCount {
+				t.Errorf("expected queryCount %d, but got %d", test.expectedInfo.queryCount, ofi.queryCount)
+			}
+			if ofi.queryValuesSize != test.expectedInfo.queryValuesSize {
+				t.Errorf("expected queryValuesSize %d, but got %d", test.expectedInfo.queryValuesSize, ofi.queryValuesSize)
+			}
+			if ofi.uncompressedSize != test.expectedInfo.uncompressedSize {
+				t.Errorf("expected uncompressedSize %d, but got %d", test.expectedInfo.uncompressedSize, ofi.uncompressedSize)
+			}
+			if ofi.compressedSize != test.expectedInfo.compressedSize {
+				t.Errorf("expected compressedSize %d, but got %d", test.expectedInfo.compressedSize, ofi.compressedSize)
+			}
+		})
 	}
 }

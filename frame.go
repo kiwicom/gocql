@@ -75,61 +75,63 @@ func (p protoVersion) String() string {
 	return fmt.Sprintf("[version=%d direction=%s]", p.version(), dir)
 }
 
-type frameOp byte
+// FrameOpcode enumerates frame operation codes from the CQL protocol.
+// See https://martin-sucha.github.io/cqlprotodoc/native_protocol_v4.html#s2.4
+type FrameOpcode byte
 
 const (
 	// header ops
-	opError         frameOp = 0x00
-	opStartup       frameOp = 0x01
-	opReady         frameOp = 0x02
-	opAuthenticate  frameOp = 0x03
-	opOptions       frameOp = 0x05
-	opSupported     frameOp = 0x06
-	opQuery         frameOp = 0x07
-	opResult        frameOp = 0x08
-	opPrepare       frameOp = 0x09
-	opExecute       frameOp = 0x0A
-	opRegister      frameOp = 0x0B
-	opEvent         frameOp = 0x0C
-	opBatch         frameOp = 0x0D
-	opAuthChallenge frameOp = 0x0E
-	opAuthResponse  frameOp = 0x0F
-	opAuthSuccess   frameOp = 0x10
+	FrameOpcodeError         FrameOpcode = 0x00
+	FrameOpcodeStartup       FrameOpcode = 0x01
+	FrameOpcodeReady         FrameOpcode = 0x02
+	FrameOpcodeAuthenticate  FrameOpcode = 0x03
+	FrameOpcodeOptions       FrameOpcode = 0x05
+	FrameOpcodeSupported     FrameOpcode = 0x06
+	FrameOpcodeQuery         FrameOpcode = 0x07
+	FrameOpcodeResult        FrameOpcode = 0x08
+	FrameOpcodePrepare       FrameOpcode = 0x09
+	FrameOpcodeExecute       FrameOpcode = 0x0A
+	FrameOpcodeRegister      FrameOpcode = 0x0B
+	FrameOpcodeEvent         FrameOpcode = 0x0C
+	FrameOpcodeBatch         FrameOpcode = 0x0D
+	FrameOpcodeAuthChallenge FrameOpcode = 0x0E
+	FrameOpcodeAuthResponse  FrameOpcode = 0x0F
+	FrameOpcodeAuthSuccess   FrameOpcode = 0x10
 )
 
-func (f frameOp) String() string {
+func (f FrameOpcode) String() string {
 	switch f {
-	case opError:
+	case FrameOpcodeError:
 		return "ERROR"
-	case opStartup:
+	case FrameOpcodeStartup:
 		return "STARTUP"
-	case opReady:
+	case FrameOpcodeReady:
 		return "READY"
-	case opAuthenticate:
+	case FrameOpcodeAuthenticate:
 		return "AUTHENTICATE"
-	case opOptions:
+	case FrameOpcodeOptions:
 		return "OPTIONS"
-	case opSupported:
+	case FrameOpcodeSupported:
 		return "SUPPORTED"
-	case opQuery:
+	case FrameOpcodeQuery:
 		return "QUERY"
-	case opResult:
+	case FrameOpcodeResult:
 		return "RESULT"
-	case opPrepare:
+	case FrameOpcodePrepare:
 		return "PREPARE"
-	case opExecute:
+	case FrameOpcodeExecute:
 		return "EXECUTE"
-	case opRegister:
+	case FrameOpcodeRegister:
 		return "REGISTER"
-	case opEvent:
+	case FrameOpcodeEvent:
 		return "EVENT"
-	case opBatch:
+	case FrameOpcodeBatch:
 		return "BATCH"
-	case opAuthChallenge:
+	case FrameOpcodeAuthChallenge:
 		return "AUTH_CHALLENGE"
-	case opAuthResponse:
+	case FrameOpcodeAuthResponse:
 		return "AUTH_RESPONSE"
-	case opAuthSuccess:
+	case FrameOpcodeAuthSuccess:
 		return "AUTH_SUCCESS"
 	default:
 		return fmt.Sprintf("UNKNOWN_OP_%d", f)
@@ -301,7 +303,7 @@ type frameHeader struct {
 	version  protoVersion
 	flags    byte
 	stream   int
-	op       frameOp
+	op       FrameOpcode
 	length   int
 	warnings []string
 }
@@ -320,7 +322,7 @@ type ObservedFrameHeader struct {
 	Version protoVersion
 	Flags   byte
 	Stream  int16
-	Opcode  frameOp
+	Opcode  FrameOpcode
 	Length  int32
 
 	// StartHeader is the time we started reading the frame header off the network connection.
@@ -344,6 +346,34 @@ type FrameHeaderObserver interface {
 	ObserveFrameHeader(context.Context, ObservedFrameHeader)
 }
 
+// ObservedFrame describes a frame that was read (not discarded).
+type ObservedFrame struct {
+	ObservedFrameHeader
+
+	// UncompressedSize is a size of the frame payload after decompression.
+	// See ObservedFrameHeader.Length to get the compressed size.
+	// UncompressedSize is zero if the frame was not compressed.
+	UncompressedSize int
+
+	// IsRowsResult indicates that the frame was a RESULT op with ROWS kind.
+	IsRowsResult bool
+
+	// RowCount is count of result rows.
+	// Only set if IsRowsResult is true.
+	RowCount int
+
+	// RowsSize is sum of sizes of all rows in the result.
+	// Only set if IsRowsResult is true.
+	RowsSize int
+}
+
+// FrameObserver allows observing received frames.
+//
+// Experimental, this interface and use may change.
+type FrameObserver interface {
+	ObserveFrame(context.Context, ObservedFrame)
+}
+
 // a framer is responsible for reading, writing and parsing frames on a single stream
 type framer struct {
 	proto byte
@@ -351,8 +381,16 @@ type framer struct {
 	flags    byte
 	compres  Compressor
 	headSize int
+	// if writeHeader was called, outFrameOp will contain the frame operation.
+	outFrameOp FrameOpcode
 	// if this frame was read then the header will be here
 	header *frameHeader
+	// ucompressedSize is size of the frame payload after decompression.
+	// It is zero if the frame was not compressed.
+	// It will be set if this frame was read.
+	uncompressedSize int
+
+	observer frameParseObserver
 
 	// if tracing flag is set this is not nil
 	traceID []byte
@@ -367,6 +405,27 @@ type framer struct {
 
 	flagLWT               int
 	rateLimitingErrorCode int
+}
+
+type frameParseObserver struct {
+	head          ObservedFrameHeader
+	frameObserver FrameObserver
+}
+
+func (fpo *frameParseObserver) observeFrame(ff *framer, f frame) {
+	if fpo.frameObserver == nil {
+		return
+	}
+	of := ObservedFrame{
+		ObservedFrameHeader: fpo.head,
+		UncompressedSize:    ff.uncompressedSize,
+	}
+	if rows, ok := f.(resultRowsFrame); ok {
+		of.IsRowsResult = true
+		of.RowCount = rows.numRows
+		of.RowsSize = rows.rowsContentSize
+	}
+	fpo.frameObserver.ObserveFrame(context.TODO(), of)
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
@@ -467,7 +526,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		}
 
 		head.stream = int(int16(p[2])<<8 | int16(p[3]))
-		head.op = frameOp(p[4])
+		head.op = FrameOpcode(p[4])
 		head.length = int(readInt(p[5:]))
 	} else {
 		if len(p) != 8 {
@@ -475,7 +534,7 @@ func readHeader(r io.Reader, p []byte) (head frameHeader, err error) {
 		}
 
 		head.stream = int(int8(p[2]))
-		head.op = frameOp(p[3])
+		head.op = FrameOpcode(p[3])
 		head.length = int(readInt(p[4:]))
 	}
 
@@ -527,6 +586,8 @@ func (f *framer) readFrame(r io.Reader, head *frameHeader) error {
 		if err != nil {
 			return err
 		}
+
+		f.uncompressedSize = len(f.buf)
 	}
 
 	f.header = head
@@ -561,25 +622,27 @@ func (f *framer) parseFrame() (frame frame, err error) {
 
 	// assumes that the frame body has been read into rbuf
 	switch f.header.op {
-	case opError:
+	case FrameOpcodeError:
 		frame = f.parseErrorFrame()
-	case opReady:
+	case FrameOpcodeReady:
 		frame = f.parseReadyFrame()
-	case opResult:
+	case FrameOpcodeResult:
 		frame, err = f.parseResultFrame()
-	case opSupported:
+	case FrameOpcodeSupported:
 		frame = f.parseSupportedFrame()
-	case opAuthenticate:
+	case FrameOpcodeAuthenticate:
 		frame = f.parseAuthenticateFrame()
-	case opAuthChallenge:
+	case FrameOpcodeAuthChallenge:
 		frame = f.parseAuthChallengeFrame()
-	case opAuthSuccess:
+	case FrameOpcodeAuthSuccess:
 		frame = f.parseAuthSuccessFrame()
-	case opEvent:
+	case FrameOpcodeEvent:
 		frame = f.parseEventFrame()
 	default:
 		return nil, NewErrProtocol("unknown op in frame header: %s", f.header.op)
 	}
+
+	f.observer.observeFrame(f, frame)
 
 	return
 }
@@ -724,7 +787,9 @@ func (f *framer) readErrorMap() (errMap ErrorMap) {
 	return
 }
 
-func (f *framer) writeHeader(flags byte, op frameOp, stream int) {
+func (f *framer) writeHeader(flags byte, op FrameOpcode, stream int) {
+	f.outFrameOp = op
+
 	f.buf = f.buf[:0]
 	f.buf = append(f.buf,
 		f.proto,
@@ -764,11 +829,29 @@ func (f *framer) setLength(length int) {
 	f.buf[p+3] = byte(length)
 }
 
-func (f *framer) finish() error {
+type outFrameInfo struct {
+	// op is the type of the frame.
+	op FrameOpcode
+	// compressedSize of the frame payload (without header).
+	compressedSize int
+	// uncompressedSize of the frame payload (without header).
+	uncompressedSize int
+	// queryValuesSize is sum of sizes of query values.
+	queryValuesSize int
+	// queryCount is number of queries executed by the query/execute/batch frame.
+	queryCount int
+}
+
+func (f *framer) finish() (outFrameInfo, error) {
 	if len(f.buf) > maxFrameSize {
 		// huge app frame, lets remove it so it doesn't bloat the heap
 		f.buf = make([]byte, defaultBufSize)
-		return ErrFrameTooBig
+		return outFrameInfo{}, ErrFrameTooBig
+	}
+
+	info := outFrameInfo{
+		op:               f.outFrameOp,
+		uncompressedSize: len(f.buf) - f.headSize,
 	}
 
 	if f.buf[1]&flagCompress == flagCompress {
@@ -779,15 +862,16 @@ func (f *framer) finish() error {
 		// TODO: only compress frames which are big enough
 		compressed, err := f.compres.Encode(f.buf[f.headSize:])
 		if err != nil {
-			return err
+			return info, err
 		}
 
 		f.buf = append(f.buf[:f.headSize], compressed...)
-	}
-	length := len(f.buf) - f.headSize
-	f.setLength(length)
 
-	return nil
+		info.compressedSize = len(f.buf) - f.headSize
+	}
+	f.setLength(len(f.buf) - f.headSize)
+
+	return info, nil
 }
 
 func (f *framer) writeTo(w io.Writer) error {
@@ -833,8 +917,8 @@ func (w writeStartupFrame) String() string {
 	return fmt.Sprintf("[startup opts=%+v]", w.opts)
 }
 
-func (w *writeStartupFrame) buildFrame(f *framer, streamID int) error {
-	f.writeHeader(f.flags&^flagCompress, opStartup, streamID)
+func (w *writeStartupFrame) buildFrame(f *framer, streamID int) (outFrameInfo, error) {
+	f.writeHeader(f.flags&^flagCompress, FrameOpcodeStartup, streamID)
 	f.writeStringMap(w.opts)
 
 	return f.finish()
@@ -846,11 +930,11 @@ type writePrepareFrame struct {
 	customPayload map[string][]byte
 }
 
-func (w *writePrepareFrame) buildFrame(f *framer, streamID int) error {
+func (w *writePrepareFrame) buildFrame(f *framer, streamID int) (outFrameInfo, error) {
 	if len(w.customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opPrepare, streamID)
+	f.writeHeader(f.flags, FrameOpcodePrepare, streamID)
 	f.writeCustomPayload(&w.customPayload)
 	f.writeLongString(w.statement)
 
@@ -1136,6 +1220,11 @@ type resultRowsFrame struct {
 	meta resultMetadata
 	// dont parse the rows here as we only need to do it once
 	numRows int
+	// rowsContentSize is size of the frame after row_count.
+	// It approximates the size of rows_content:
+	// Currently it measures rows_content,
+	// but theoretically more fields could be added after rows_content in the future.
+	rowsContentSize int
 }
 
 func (f *resultRowsFrame) String() string {
@@ -1150,6 +1239,7 @@ func (f *framer) parseResultRows() frame {
 	if result.numRows < 0 {
 		panic(fmt.Errorf("invalid row_count in result frame: %d", result.numRows))
 	}
+	result.rowsContentSize = len(f.buf)
 
 	return result
 }
@@ -1436,12 +1526,12 @@ func (a *writeAuthResponseFrame) String() string {
 	return fmt.Sprintf("[auth_response data=%q]", a.data)
 }
 
-func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) error {
+func (a *writeAuthResponseFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeAuthResponseFrame(streamID, a.data)
 }
 
-func (f *framer) writeAuthResponseFrame(streamID int, data []byte) error {
-	f.writeHeader(f.flags, opAuthResponse, streamID)
+func (f *framer) writeAuthResponseFrame(streamID int, data []byte) (outFrameInfo, error) {
+	f.writeHeader(f.flags, FrameOpcodeAuthResponse, streamID)
 	f.writeBytes(data)
 	return f.finish()
 }
@@ -1474,11 +1564,13 @@ func (q queryParams) String() string {
 		q.consistency, q.skipMeta, q.pageSize, q.pagingState, q.serialConsistency, q.defaultTimestamp, q.values, q.keyspace)
 }
 
-func (f *framer) writeQueryParams(opts *queryParams) {
+// writeQueryParams writes the queryParameters to the buffer.
+// It returns the total size of the values.
+func (f *framer) writeQueryParams(opts *queryParams) int {
 	f.writeConsistency(opts.consistency)
 
 	if f.proto == protoVersion1 {
-		return
+		return 0
 	}
 
 	var flags byte
@@ -1526,6 +1618,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 		f.writeByte(flags)
 	}
 
+	startIdx := len(f.buf)
 	if n := len(opts.values); n > 0 {
 		f.writeShort(uint16(n))
 
@@ -1540,6 +1633,7 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 			}
 		}
 	}
+	valuesSize := len(f.buf) - startIdx
 
 	if opts.pageSize > 0 {
 		f.writeInt(int32(opts.pageSize))
@@ -1567,6 +1661,8 @@ func (f *framer) writeQueryParams(opts *queryParams) {
 	if opts.keyspace != "" {
 		f.writeString(opts.keyspace)
 	}
+
+	return valuesSize
 }
 
 type writeQueryFrame struct {
@@ -1581,29 +1677,32 @@ func (w *writeQueryFrame) String() string {
 	return fmt.Sprintf("[query statement=%q params=%v]", w.statement, w.params)
 }
 
-func (w *writeQueryFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeQueryFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeQueryFrame(streamID, w.statement, &w.params, w.customPayload)
 }
 
-func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams, customPayload map[string][]byte) error {
+func (f *framer) writeQueryFrame(streamID int, statement string, params *queryParams, customPayload map[string][]byte) (outFrameInfo, error) {
 	if len(customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opQuery, streamID)
+	f.writeHeader(f.flags, FrameOpcodeQuery, streamID)
 	f.writeCustomPayload(&customPayload)
 	f.writeLongString(statement)
-	f.writeQueryParams(params)
+	valuesSize := f.writeQueryParams(params)
 
-	return f.finish()
+	ofi, err := f.finish()
+	ofi.queryValuesSize = valuesSize
+	ofi.queryCount = 1
+	return ofi, err
 }
 
 type frameBuilder interface {
-	buildFrame(framer *framer, streamID int) error
+	buildFrame(framer *framer, streamID int) (outFrameInfo, error)
 }
 
-type frameWriterFunc func(framer *framer, streamID int) error
+type frameWriterFunc func(framer *framer, streamID int) (outFrameInfo, error)
 
-func (f frameWriterFunc) buildFrame(framer *framer, streamID int) error {
+func (f frameWriterFunc) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return f(framer, streamID)
 }
 
@@ -1619,20 +1718,22 @@ func (e *writeExecuteFrame) String() string {
 	return fmt.Sprintf("[execute id=% X params=%v]", e.preparedID, &e.params)
 }
 
-func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) error {
+func (e *writeExecuteFrame) buildFrame(fr *framer, streamID int) (outFrameInfo, error) {
 	return fr.writeExecuteFrame(streamID, e.preparedID, &e.params, &e.customPayload)
 }
 
-func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) error {
+func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *queryParams, customPayload *map[string][]byte) (outFrameInfo, error) {
 	if len(*customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opExecute, streamID)
+	f.writeHeader(f.flags, FrameOpcodeExecute, streamID)
 	f.writeCustomPayload(customPayload)
 	f.writeShortBytes(preparedID)
+	var valuesSize int
 	if f.proto > protoVersion1 {
-		f.writeQueryParams(params)
+		valuesSize = f.writeQueryParams(params)
 	} else {
+		startIdx := len(f.buf)
 		n := len(params.values)
 		f.writeShort(uint16(n))
 		for i := 0; i < n; i++ {
@@ -1642,10 +1743,14 @@ func (f *framer) writeExecuteFrame(streamID int, preparedID []byte, params *quer
 				f.writeBytes(params.values[i].value)
 			}
 		}
+		valuesSize = len(f.buf) - startIdx
 		f.writeConsistency(params.consistency)
 	}
 
-	return f.finish()
+	ofi, err := f.finish()
+	ofi.queryValuesSize = valuesSize
+	ofi.queryCount = 1
+	return ofi, err
 }
 
 // TODO: can we replace BatchStatemt with batchStatement? As they prety much
@@ -1670,15 +1775,15 @@ type writeBatchFrame struct {
 	customPayload map[string][]byte
 }
 
-func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeBatchFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeBatchFrame(streamID, w, w.customPayload)
 }
 
-func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload map[string][]byte) error {
+func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload map[string][]byte) (outFrameInfo, error) {
 	if len(customPayload) > 0 {
 		f.payload()
 	}
-	f.writeHeader(f.flags, opBatch, streamID)
+	f.writeHeader(f.flags, FrameOpcodeBatch, streamID)
 	f.writeCustomPayload(&customPayload)
 	f.writeByte(byte(w.typ))
 
@@ -1686,6 +1791,8 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 	f.writeShort(uint16(n))
 
 	var flags byte
+
+	var queryParamsSize int
 
 	for i := 0; i < n; i++ {
 		b := &w.statements[i]
@@ -1697,6 +1804,8 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 			f.writeShortBytes(b.preparedID)
 		}
 
+		startIdx := len(f.buf)
+
 		f.writeShort(uint16(len(b.values)))
 		for j := range b.values {
 			col := b.values[j]
@@ -1704,7 +1813,7 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 				// TODO: move this check into the caller and set a flag on writeBatchFrame
 				// to indicate using named values
 				if f.proto <= protoVersion5 {
-					return fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
+					return outFrameInfo{}, fmt.Errorf("gocql: named query values are not supported in batches, please see https://issues.apache.org/jira/browse/CASSANDRA-10246")
 				}
 				flags |= flagWithNameValues
 				f.writeString(col.name)
@@ -1715,6 +1824,8 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 				f.writeBytes(col.value)
 			}
 		}
+
+		queryParamsSize += len(f.buf) - startIdx
 	}
 
 	f.writeConsistency(w.consistency)
@@ -1748,17 +1859,20 @@ func (f *framer) writeBatchFrame(streamID int, w *writeBatchFrame, customPayload
 		}
 	}
 
-	return f.finish()
+	ofi, err := f.finish()
+	ofi.queryValuesSize = queryParamsSize
+	ofi.queryCount = n
+	return ofi, err
 }
 
 type writeOptionsFrame struct{}
 
-func (w *writeOptionsFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeOptionsFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeOptionsFrame(streamID, w)
 }
 
-func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) error {
-	f.writeHeader(f.flags&^flagCompress, opOptions, stream)
+func (f *framer) writeOptionsFrame(stream int, _ *writeOptionsFrame) (outFrameInfo, error) {
+	f.writeHeader(f.flags&^flagCompress, FrameOpcodeOptions, stream)
 	return f.finish()
 }
 
@@ -1766,12 +1880,12 @@ type writeRegisterFrame struct {
 	events []string
 }
 
-func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) error {
+func (w *writeRegisterFrame) buildFrame(framer *framer, streamID int) (outFrameInfo, error) {
 	return framer.writeRegisterFrame(streamID, w)
 }
 
-func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) error {
-	f.writeHeader(f.flags, opRegister, streamID)
+func (f *framer) writeRegisterFrame(streamID int, w *writeRegisterFrame) (outFrameInfo, error) {
+	f.writeHeader(f.flags, FrameOpcodeRegister, streamID)
 	f.writeStringList(w.events)
 
 	return f.finish()

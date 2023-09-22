@@ -41,7 +41,8 @@ type Session struct {
 	batchObserver       BatchObserver
 	connectObserver     ConnectObserver
 	disconnectObserver  DisconnectObserver
-	frameObserver       FrameHeaderObserver
+	frameHeaderObserver FrameHeaderObserver
+	frameObserver       FrameObserver
 	streamObserver      StreamObserver
 	hostSource          *ringDescriber
 	ringRefresher       *refreshDebouncer
@@ -175,7 +176,8 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.queryObserver = cfg.QueryObserver
 	s.batchObserver = cfg.BatchObserver
 	s.connectObserver = cfg.ConnectObserver
-	s.frameObserver = cfg.FrameHeaderObserver
+	s.frameHeaderObserver = cfg.FrameHeaderObserver
+	s.frameObserver = cfg.FrameObserver
 	s.streamObserver = cfg.StreamObserver
 
 	//Check the TLS Config before trying to connect to anything external
@@ -2145,10 +2147,10 @@ type routingKeyInfoLRU struct {
 }
 
 type routingKeyInfo struct {
-	indexes  []int
-	types    []TypeInfo
-	keyspace string
-	table    string
+	indexes     []int
+	types       []TypeInfo
+	keyspace    string
+	table       string
 	lwt         bool
 	partitioner partitioner
 }
