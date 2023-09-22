@@ -1254,6 +1254,7 @@ type ObservedStream struct {
 	FramePayloadUncompressedSize int
 	// FramePayloadCompressedSize is the compressed size of the frame payload (without frame header).
 	// This field is only available in StreamStarted.
+	// FramePayloadCompressedSize is zero if the frame was not compressed.
 	FramePayloadCompressedSize int
 	// QueryValuesSize is the total uncompressed size of query values in the frame (without other query options).
 	// For a batch, it is the sum for all queries in the batch.

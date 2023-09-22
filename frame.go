@@ -864,10 +864,10 @@ func (f *framer) finish() (outFrameInfo, error) {
 		}
 
 		f.buf = append(f.buf[:f.headSize], compressed...)
+
+		info.compressedSize = len(f.buf) - f.headSize
 	}
-	length := len(f.buf) - f.headSize
-	info.compressedSize = length
-	f.setLength(length)
+	f.setLength(len(f.buf) - f.headSize)
 
 	return info, nil
 }

@@ -107,6 +107,7 @@ func TestFrameReadTooLong(t *testing.T) {
 func TestOutFrameInfo(t *testing.T) {
 	tests := map[string]struct {
 		frame        frameBuilder
+		compress     bool
 		expectedInfo outFrameInfo
 	}{
 		"query": {
@@ -132,6 +133,7 @@ func TestOutFrameInfo(t *testing.T) {
 				},
 				customPayload: nil,
 			},
+			compress: true,
 			expectedInfo: outFrameInfo{
 				op:               opQuery,
 				uncompressedSize: 81,
@@ -155,6 +157,7 @@ func TestOutFrameInfo(t *testing.T) {
 				},
 				customPayload: nil,
 			},
+			compress: true,
 			expectedInfo: outFrameInfo{
 				op:               opExecute,
 				compressedSize:   50,
@@ -198,6 +201,7 @@ func TestOutFrameInfo(t *testing.T) {
 				defaultTimestampValue: 0,
 				customPayload:         nil,
 			},
+			compress: true,
 			expectedInfo: outFrameInfo{
 				op:               opBatch,
 				compressedSize:   96,
@@ -207,7 +211,8 @@ func TestOutFrameInfo(t *testing.T) {
 			},
 		},
 		"options": {
-			frame: &writeOptionsFrame{},
+			frame:    &writeOptionsFrame{},
+			compress: true,
 			expectedInfo: outFrameInfo{
 				op:               opOptions,
 				compressedSize:   0,
@@ -220,6 +225,7 @@ func TestOutFrameInfo(t *testing.T) {
 			frame: &writeRegisterFrame{
 				events: []string{"event1", "event2"},
 			},
+			compress: true,
 			expectedInfo: outFrameInfo{
 				op:               opRegister,
 				compressedSize:   20,
@@ -228,10 +234,27 @@ func TestOutFrameInfo(t *testing.T) {
 				queryCount:       0,
 			},
 		},
+		"register uncompressed": {
+			frame: &writeRegisterFrame{
+				events: []string{"event1", "event2"},
+			},
+			compress: false,
+			expectedInfo: outFrameInfo{
+				op:               opRegister,
+				compressedSize:   0,
+				uncompressedSize: 18,
+				queryValuesSize:  0,
+				queryCount:       0,
+			},
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			fr := newFramer(SnappyCompressor{}, 4)
+			var compressor Compressor
+			if test.compress {
+				compressor = SnappyCompressor{}
+			}
+			fr := newFramer(compressor, 4)
 			ofi, err := test.frame.buildFrame(fr, 42)
 			if err != nil {
 				t.Fatal(err)
