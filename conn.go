@@ -1228,6 +1228,9 @@ func (c *Conn) exec(ctx context.Context, req frameBuilder, tracer Tracer) (*fram
 		if v := resp.framer.header.version.version(); v != c.version {
 			return nil, NewErrProtocol("unexpected protocol version in response: got %d expected %d", v, c.version)
 		}
+		if resp.framer != nil {
+			resp.framer.observer.reqCtx = ctx
+		}
 
 		return resp.framer, nil
 	case <-timeoutCh:
