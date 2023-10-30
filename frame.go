@@ -410,6 +410,7 @@ type framer struct {
 type frameParseObserver struct {
 	head          ObservedFrameHeader
 	frameObserver FrameObserver
+	reqCtx        context.Context
 }
 
 func (fpo *frameParseObserver) observeFrame(ff *framer, f frame) {
@@ -425,7 +426,11 @@ func (fpo *frameParseObserver) observeFrame(ff *framer, f frame) {
 		of.RowCount = rows.numRows
 		of.RowsSize = rows.rowsContentSize
 	}
-	fpo.frameObserver.ObserveFrame(context.TODO(), of)
+	ctx := fpo.reqCtx
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+	fpo.frameObserver.ObserveFrame(ctx, of)
 }
 
 func newFramer(compressor Compressor, version byte) *framer {
