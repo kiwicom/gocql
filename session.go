@@ -228,26 +228,14 @@ func (s *Session) init() error {
 			s.connCfg.ProtoVersion = proto
 		}
 
-		if err := s.control.connect(hosts); err != nil {
+		newHosts, partitionerName, err := s.control.connect(hosts)
+		if err != nil {
 			return err
 		}
-
-		if !s.cfg.DisableInitialHostLookup {
-			var partitioner string
-			newHosts, partitioner, err := s.hostSource.GetHosts()
-			if err != nil {
-				return err
-			}
-			s.policy.SetPartitioner(partitioner)
-			filteredHosts := make([]*HostInfo, 0, len(newHosts))
-			for _, host := range newHosts {
-				if !s.cfg.filterHost(host) {
-					filteredHosts = append(filteredHosts, host)
-				}
-			}
-
-			hosts = filteredHosts
+		if partitionerName != "" {
+			s.policy.SetPartitioner(partitionerName)
 		}
+		hosts = newHosts
 	}
 
 	for _, host := range hosts {
