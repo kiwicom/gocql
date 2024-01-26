@@ -24,6 +24,7 @@ func TestSessionAPI(t *testing.T) {
 	s.executor = &queryExecutor{
 		pool:   s.pool,
 		policy: s.policy,
+		logger: s.logger,
 	}
 	defer s.Close()
 

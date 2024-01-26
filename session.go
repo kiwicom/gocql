@@ -171,6 +171,7 @@ func NewSession(cfg ClusterConfig) (*Session, error) {
 	s.executor = &queryExecutor{
 		pool:   s.pool,
 		policy: cfg.PoolConfig.HostSelectionPolicy,
+		logger: s.logger,
 	}
 
 	s.queryObserver = cfg.QueryObserver

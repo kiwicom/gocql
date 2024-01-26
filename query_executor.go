@@ -28,6 +28,7 @@ type ExecutableQuery interface {
 type queryExecutor struct {
 	pool   *policyConnPool
 	policy HostSelectionPolicy
+	logger StdLogger
 }
 
 func (q *queryExecutor) attemptQuery(ctx context.Context, qry ExecutableQuery, conn *Conn, selected SelectedHost) *Iter {
@@ -111,23 +112,39 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 	selectedHost := hostIter()
 	rt := qry.retryPolicy()
 
+	if gocqlDebug && selectedHost == nil {
+		q.logger.Printf("gocql: do: selectedHost is nil\n")
+	}
+
 	var lastErr error
 	var iter *Iter
 	for selectedHost != nil {
+		if gocqlDebug {
+			q.logger.Printf("gocql: do: selectedHost %v\n", selectedHost)
+		}
 		host := selectedHost.Info()
 		if host == nil || !host.IsUp() {
+			if gocqlDebug {
+				q.logger.Printf("gocql: do: skipping selectedHost %v: host not up\n", selectedHost)
+			}
 			selectedHost = hostIter()
 			continue
 		}
 
 		pool, ok := q.pool.getPool(host)
 		if !ok {
+			if gocqlDebug {
+				q.logger.Printf("gocql: do: skipping selectedHost %v: could not get pool\n", selectedHost)
+			}
 			selectedHost = hostIter()
 			continue
 		}
 
 		conn := pool.Pick(selectedHost.Token())
 		if conn == nil {
+			if gocqlDebug {
+				q.logger.Printf("gocql: do: skipping selectedHost %v: conn is nil\n", selectedHost)
+			}
 			selectedHost = hostIter()
 			continue
 		}
@@ -142,6 +159,10 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			selectedHost.Mark(nil)
 			return iter
 		default:
+			if gocqlDebug {
+				q.logger.Printf("gocql: do: skipping selectedHost %v: marking host with err=%v\n", selectedHost,
+					iter.err)
+			}
 			selectedHost.Mark(iter.err)
 		}
 
@@ -171,6 +192,10 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 
 	if lastErr != nil {
 		return &Iter{err: lastErr}
+	}
+
+	if gocqlDebug {
+		q.logger.Printf("gocql: do could not use any connection\n")
 	}
 
 	return &Iter{err: ErrNoConnections}
