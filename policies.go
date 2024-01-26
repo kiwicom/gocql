@@ -302,6 +302,13 @@ type selectedHost struct {
 	token token
 }
 
+func (host selectedHost) String() string {
+	if host.info == nil {
+		return fmt.Sprintf("{%p n/a %v}", host.info, host.token)
+	}
+	return fmt.Sprintf("{%p %s %v}", host.info, host.info.ConnectAddress(), host.token)
+}
+
 func (host selectedHost) Info() *HostInfo {
 	return host.info
 }

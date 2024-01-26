@@ -113,19 +113,19 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 	rt := qry.retryPolicy()
 
 	if gocqlDebug && selectedHost == nil {
-		q.logger.Printf("gocql: do: selectedHost is nil\n")
+		q.logger.Printf("gocql: do %v: selectedHost is nil\n", qry)
 	}
 
 	var lastErr error
 	var iter *Iter
 	for selectedHost != nil {
 		if gocqlDebug {
-			q.logger.Printf("gocql: do: selectedHost %v\n", selectedHost)
+			q.logger.Printf("gocql: do %v: selectedHost %v\n", qry, selectedHost)
 		}
 		host := selectedHost.Info()
 		if host == nil || !host.IsUp() {
 			if gocqlDebug {
-				q.logger.Printf("gocql: do: skipping selectedHost %v: host not up\n", selectedHost)
+				q.logger.Printf("gocql: do %v: skipping selectedHost %v: host not up\n", qry, selectedHost)
 			}
 			selectedHost = hostIter()
 			continue
@@ -134,7 +134,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		pool, ok := q.pool.getPool(host)
 		if !ok {
 			if gocqlDebug {
-				q.logger.Printf("gocql: do: skipping selectedHost %v: could not get pool\n", selectedHost)
+				q.logger.Printf("gocql: do %v: skipping selectedHost %v: could not get pool\n", qry, selectedHost)
 			}
 			selectedHost = hostIter()
 			continue
@@ -143,7 +143,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 		conn := pool.Pick(selectedHost.Token())
 		if conn == nil {
 			if gocqlDebug {
-				q.logger.Printf("gocql: do: skipping selectedHost %v: conn is nil\n", selectedHost)
+				q.logger.Printf("gocql: do %v: skipping selectedHost %v: conn is nil\n", qry, selectedHost)
 			}
 			selectedHost = hostIter()
 			continue
@@ -160,8 +160,8 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			return iter
 		default:
 			if gocqlDebug {
-				q.logger.Printf("gocql: do: skipping selectedHost %v: marking host with err=%v\n", selectedHost,
-					iter.err)
+				q.logger.Printf("gocql: do %v: skipping selectedHost %v: marking host with err=%v\n", qry,
+					selectedHost, iter.err)
 			}
 			selectedHost.Mark(iter.err)
 		}
@@ -195,7 +195,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 	}
 
 	if gocqlDebug {
-		q.logger.Printf("gocql: do could not use any connection\n")
+		q.logger.Printf("gocql: do %v: could not use any connection\n", qry)
 	}
 
 	return &Iter{err: ErrNoConnections}
