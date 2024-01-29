@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -557,6 +558,11 @@ func (s *startupCoordinator) authenticateHandshake(ctx context.Context, authFram
 func (c *Conn) closeWithError(err error) {
 	if c == nil {
 		return
+	}
+
+	if gocqlDebug {
+		c.logger.Printf("gocql: closing connection %p (%s→%s): %s\n",
+			c, c.conn.LocalAddr(), c.conn.RemoteAddr(), debug.Stack())
 	}
 
 	c.mu.Lock()
