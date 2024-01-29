@@ -317,11 +317,19 @@ func (pool *hostConnPool) Pick(token token) *Conn {
 	defer pool.mu.RUnlock()
 
 	if pool.closed {
+		if gocqlDebug {
+			pool.logger.Printf("gocql: pool is closed for %p %q\n", pool.host, pool.host.ConnectAddress())
+		}
 		return nil
 	}
 
 	size, missing := pool.connPicker.Size()
 	if missing > 0 {
+		if gocqlDebug {
+			pool.logger.Printf("gocql: pool with size %d is missing %d connections for %p %q\n",
+				size, missing, pool.host, pool.host.ConnectAddress())
+		}
+
 		// try to fill the pool
 		go pool.fill()
 
@@ -344,6 +352,9 @@ func (pool *hostConnPool) Size() int {
 
 // Close the connection pool
 func (pool *hostConnPool) Close() {
+	if gocqlDebug {
+		pool.logger.Printf("gocql: closing pool for %q\n", pool.host.ConnectAddress())
+	}
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
