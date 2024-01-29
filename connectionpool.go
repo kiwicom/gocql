@@ -338,7 +338,16 @@ func (pool *hostConnPool) Pick(token token) *Conn {
 		}
 	}
 
-	return pool.connPicker.Pick(token)
+	pickedConn := pool.connPicker.Pick(token)
+	if gocqlDebug {
+		var connInfo string
+		if pickedConn != nil {
+			connInfo = fmt.Sprintf(" (%s)", pickedConn.conn)
+		}
+		pool.logger.Printf("gocql: picked conn %p%s from pool %p %T for %q\n", pickedConn, connInfo,
+			pool, pool, pool.host.ConnectAddress())
+	}
+	return pickedConn
 }
 
 // Size returns the number of connections currently active in the pool
