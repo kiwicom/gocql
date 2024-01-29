@@ -2,6 +2,7 @@ package gocql
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -140,7 +141,7 @@ func (q *queryExecutor) do(ctx context.Context, qry ExecutableQuery, hostIter Ne
 			continue
 		}
 
-		conn := pool.Pick(selectedHost.Token())
+		conn := pool.Pick(selectedHost.Token(), fmt.Sprintf("%v", qry))
 		if conn == nil {
 			if gocqlDebug {
 				q.logger.Printf("gocql: do %v: skipping selectedHost %v: conn is nil\n", qry, selectedHost)

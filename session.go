@@ -581,7 +581,7 @@ func (s *Session) getConn() *Conn {
 		pool, ok := s.pool.getPool(host)
 		if !ok {
 			continue
-		} else if conn := pool.Pick(nil); conn != nil {
+		} else if conn := pool.Pick(nil, "session.getConn"); conn != nil {
 			return conn
 		}
 	}

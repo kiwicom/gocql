@@ -312,13 +312,13 @@ func newHostConnPool(session *Session, host *HostInfo, port, size int,
 }
 
 // Pick a connection from this connection pool for the given query.
-func (pool *hostConnPool) Pick(token token) *Conn {
+func (pool *hostConnPool) Pick(token token, debugInfo string) *Conn {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 
 	if pool.closed {
 		if gocqlDebug {
-			pool.logger.Printf("gocql: pool is closed for %p %q\n", pool.host, pool.host.ConnectAddress())
+			pool.logger.Printf("gocql: %s: pool is closed for %p %q\n", debugInfo, pool.host, pool.host.ConnectAddress())
 		}
 		return nil
 	}
@@ -326,8 +326,8 @@ func (pool *hostConnPool) Pick(token token) *Conn {
 	size, missing := pool.connPicker.Size()
 	if missing > 0 {
 		if gocqlDebug {
-			pool.logger.Printf("gocql: pool with size %d is missing %d connections for %p %q\n",
-				size, missing, pool.host, pool.host.ConnectAddress())
+			pool.logger.Printf("gocql: %s: pool with size %d is missing %d connections for %p %q\n",
+				debugInfo, size, missing, pool.host, pool.host.ConnectAddress())
 		}
 
 		// try to fill the pool
@@ -342,10 +342,10 @@ func (pool *hostConnPool) Pick(token token) *Conn {
 	if gocqlDebug {
 		var connInfo string
 		if pickedConn != nil {
-			connInfo = fmt.Sprintf(" (%s)", pickedConn.conn)
+			connInfo = fmt.Sprintf(" (%s→)", pickedConn.conn.LocalAddr(), pickedConn.conn.RemoteAddr())
 		}
-		pool.logger.Printf("gocql: picked conn %p%s from pool %p %T for %q\n", pickedConn, connInfo,
-			pool, pool, pool.host.ConnectAddress())
+		pool.logger.Printf("gocql: %s: picked conn %p%s from pool %p %T for %q\n",
+			debugInfo, pickedConn, connInfo, pool.connPicker, pool.connPicker, pool.host.ConnectAddress())
 	}
 	return pickedConn
 }
