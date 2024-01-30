@@ -407,6 +407,11 @@ func (s *Session) reconnectDownedHosts(intv time.Duration) {
 	}
 }
 
+// AllHosts returns all hosts currently in the token ring.
+func (s *Session) AllHosts() []*HostInfo {
+	return s.ring.allHosts()
+}
+
 // SetConsistency sets the default consistency level for this session. This
 // setting can also be changed on a per-query basis and the default value
 // is Quorum.
