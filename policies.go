@@ -573,6 +573,7 @@ func (t *tokenAwareHostPolicy) Pick(qry ExecutableQuery) NextHost {
 
 	routingKey, err := qry.GetRoutingKey()
 	if err != nil {
+		t.logger.Printf("unable to get routing key for query: %v", err)
 		return t.fallback.Pick(qry)
 	} else if routingKey == nil {
 		return t.fallback.Pick(qry)

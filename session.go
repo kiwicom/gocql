@@ -665,13 +665,16 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	if len(info.request.pkeyColumns) > 0 {
 		// proto v4 dont need to calculate primary key columns
 		types := make([]TypeInfo, len(info.request.pkeyColumns))
+		names := make([]string, len(info.request.pkeyColumns))
 		for i, col := range info.request.pkeyColumns {
 			types[i] = info.request.columns[col].TypeInfo
+			names[i] = info.request.columns[col].Name
 		}
 
 		routingKeyInfo := &routingKeyInfo{
 			indexes:     info.request.pkeyColumns,
 			types:       types,
+			names:       names,
 			lwt:         info.request.lwt,
 			partitioner: partitioner,
 			keyspace:    keyspace,
@@ -709,6 +712,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 	routingKeyInfo := &routingKeyInfo{
 		indexes:     make([]int, size),
 		types:       make([]TypeInfo, size),
+		names:       make([]string, size),
 		lwt:         info.request.lwt,
 		partitioner: partitioner,
 		keyspace:    keyspace,
@@ -725,6 +729,7 @@ func (s *Session) routingKeyInfo(ctx context.Context, stmt string) (*routingKeyI
 				// there may be many such bound columns, pick the first
 				routingKeyInfo.indexes[keyIndex] = argIndex
 				routingKeyInfo.types[keyIndex] = boundColumn.TypeInfo
+				routingKeyInfo.names[keyIndex] = boundColumn.Name
 				break
 			}
 		}
@@ -2078,6 +2083,10 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 	}
 
 	if len(routingKeyInfo.indexes) == 1 {
+		if len(values) <= routingKeyInfo.indexes[0] {
+			return nil, fmt.Errorf("gocql: missing routing key value at index %d for column %q",
+				routingKeyInfo.indexes[0], routingKeyInfo.names[0])
+		}
 		// single column routing key
 		routingKey, err := Marshal(
 			routingKeyInfo.types[0],
@@ -2092,6 +2101,10 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 	// composite routing key
 	buf := bytes.NewBuffer(make([]byte, 0, 256))
 	for i := range routingKeyInfo.indexes {
+		if len(values) <= routingKeyInfo.indexes[i] {
+			return nil, fmt.Errorf("gocql: missing routing key value at index %d for column %q",
+				routingKeyInfo.indexes[i], routingKeyInfo.names[i])
+		}
 		encoded, err := Marshal(
 			routingKeyInfo.types[i],
 			values[routingKeyInfo.indexes[i]],
@@ -2154,6 +2167,7 @@ type routingKeyInfoLRU struct {
 type routingKeyInfo struct {
 	indexes     []int
 	types       []TypeInfo
+	names       []string
 	keyspace    string
 	table       string
 	lwt         bool
