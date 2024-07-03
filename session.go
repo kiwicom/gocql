@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"github.com/gocql/gocql/internal/lru"
+	"github.com/gocql/gocql/internal/murmur"
 )
 
 // Session is the interface used by users to interact with the database.
@@ -2120,6 +2121,42 @@ func createRoutingKey(routingKeyInfo *routingKeyInfo, values []interface{}) ([]b
 	}
 	routingKey := buf.Bytes()
 	return routingKey, nil
+}
+
+var identityIndexes = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}
+
+// Murmur3Token computes a murmur3 token for the given values.
+func Murmur3Token(types []TypeInfo, values []interface{}) (int64, error) {
+	if len(values) == 0 {
+		return 0, fmt.Errorf("gocql: no values provided")
+	}
+
+	if len(types) != len(values) {
+		return 0, fmt.Errorf("gocql: types and values length mismatch")
+	}
+
+	var indexes []int
+	if n := len(types); n <= len(identityIndexes) {
+		indexes = identityIndexes[:n]
+	} else {
+		indexes = make([]int, n)
+		for i := range indexes {
+			indexes[i] = i
+		}
+	}
+
+	rki := &routingKeyInfo{
+		types:   types,
+		indexes: indexes,
+		names:   make([]string, len(types)), // used in error messages
+	}
+
+	routingKey, err := createRoutingKey(rki, values)
+	if err != nil {
+		return 0, err
+	}
+
+	return murmur.Murmur3H1(routingKey), nil
 }
 
 func (b *Batch) borrowForExecution() {
