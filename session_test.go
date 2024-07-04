@@ -333,3 +333,108 @@ func TestIsUseStatement(t *testing.T) {
 		}
 	}
 }
+
+func TestMurmur3Token(t *testing.T) {
+	tests := map[string]struct {
+		types    []TypeInfo
+		values   []interface{}
+		expected int64
+		err      string
+	}{
+		"8351-2882-581-20036": {
+			types: []TypeInfo{
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+			},
+			values: []interface{}{
+				int16(8351),
+				int16(2882),
+				int16(581),
+				int16(20036),
+			},
+			expected: -9223371846324820981,
+		},
+		"3852-744-522-20116": {
+			types: []TypeInfo{
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+			},
+			values: []interface{}{
+				int16(3852),
+				int16(744),
+				int16(522),
+				int16(20116),
+			},
+			expected: -9223370757649630452,
+		},
+		"5212-813-19933-0": {
+			types: []TypeInfo{
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+			},
+			values: []interface{}{
+				int16(5212),
+				int16(813),
+				int16(19933),
+				int16(0),
+			},
+			expected: 5363655924167674765,
+		},
+		"empty": {
+			types: []TypeInfo{
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+			},
+			values: nil,
+			err:    "gocql: no values provided",
+		},
+		"mismatched length": {
+			types: []TypeInfo{
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+			},
+			values: []interface{}{
+				int16(5212),
+				int16(813),
+				int16(19933),
+				int16(0),
+			},
+			err: "gocql: types and values length mismatch",
+		},
+		"invalid value": {
+			types: []TypeInfo{
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+				NewNativeType(protoVersion4, TypeSmallInt, ""),
+			},
+			values: []interface{}{
+				int16(5212),
+				"hello there",
+			},
+			err: "can not marshal string into smallint: strconv.ParseInt: parsing \"hello there\": invalid syntax",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := Murmur3Token(test.types, test.values)
+			if test.err != "" {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil", test.err)
+				}
+				if gotErr := err.Error(); gotErr != test.err {
+					t.Fatalf("expected error %q, got %q", test.err, gotErr)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error %q", err)
+				}
+				if got != test.expected {
+					t.Fatalf("expected %v, got %v", test.expected, got)
+				}
+			}
+		})
+	}
+}
